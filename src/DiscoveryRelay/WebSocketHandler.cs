@@ -160,18 +160,25 @@ public class WebSocketHandler
                     _logger.LogInformation("Client {SocketId} removed subscription {SubscriptionId}, remaining subscriptions: {Count}", 
                         socketId, subscriptionId, subscriptions.Count);
                     
-                    // If client has no more subscriptions, disconnect them
+                    // If client has no more subscriptions, schedule disconnection
                     if (subscriptions.Count == 0)
                     {
-                        _logger.LogInformation("Client {SocketId} has no more subscriptions, disconnecting", socketId);
+                        _logger.LogInformation("Client {SocketId} has no more subscriptions, will disconnect", socketId);
                         // We'll close the connection after sending the response
+                        // but we won't call CloseWebSocketAsync directly to avoid duplicate logging
                         Task.Run(async () => 
                         {
                             // Small delay to ensure response is sent before closing
                             await Task.Delay(500);
-                            if (_sockets.TryGetValue(socketId, out var webSocket))
+                            if (_sockets.TryGetValue(socketId, out var webSocket) && 
+                                webSocket.State == WebSocketState.Open)
                             {
-                                await CloseWebSocketAsync(socketId, webSocket);
+                                // Close the WebSocket but don't call our CloseWebSocketAsync method
+                                // The connection will be fully cleaned up in the finally block
+                                await webSocket.CloseAsync(
+                                    WebSocketCloseStatus.NormalClosure,
+                                    "No active subscriptions",
+                                    CancellationToken.None);
                             }
                         });
                     }
@@ -192,8 +199,12 @@ public class WebSocketHandler
 
     private async Task CloseWebSocketAsync(string socketId, WebSocket webSocket)
     {
-        _sockets.TryRemove(socketId, out _);
-        _clientSubscriptions.TryRemove(socketId, out _);
+        // Only remove from collections and log if we haven't already done so
+        if (_sockets.TryRemove(socketId, out _))
+        {
+            _clientSubscriptions.TryRemove(socketId, out _);
+            _logger.LogInformation("WebSocket closed: {SocketId}", socketId);
+        }
 
         if (webSocket.State != WebSocketState.Closed && webSocket.State != WebSocketState.Aborted)
         {
@@ -202,8 +213,6 @@ public class WebSocketHandler
                 "Closing",
                 CancellationToken.None);
         }
-
-        _logger.LogInformation("WebSocket closed: {SocketId}", socketId);
     }
 
     public async Task BroadcastMessageAsync(string message)
