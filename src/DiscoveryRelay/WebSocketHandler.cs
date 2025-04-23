@@ -54,7 +54,7 @@ public class WebSocketHandler : IDisposable
     {
         var idleTimeout = TimeSpan.FromMinutes(_options.DisconnectTimeoutMinutes);
         var now = DateTime.UtcNow;
-        
+
         foreach (var (socketId, lastActivity) in _lastActivityTime)
         {
             // If the connection has been idle for longer than the timeout
@@ -65,7 +65,34 @@ public class WebSocketHandler : IDisposable
                 {
                     _logger.LogInformation("Disconnecting idle client {SocketId} (last activity: {LastActivity})", 
                         socketId, lastActivity);
-                    
+
+                    // Send "CLOSE" event to the subscriber
+                    if (_clientSubscriptions.TryGetValue(socketId, out var subscriptions))
+                    {
+                        foreach (var subscriptionId in subscriptions)
+                        {
+                            var closeMessage = new[] { "CLOSED", subscriptionId, "error: shutting down idle subscription" };
+                            var closeMessageBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(closeMessage, _jsonOptions));
+
+                            Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    await webSocket.SendAsync(
+                                        new ArraySegment<byte>(closeMessageBytes),
+                                        WebSocketMessageType.Text,
+                                        true,
+                                        CancellationToken.None);
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogError(ex, "Error sending CLOSE event to {SocketId} for subscription {SubscriptionId}", 
+                                        socketId, subscriptionId);
+                                }
+                            });
+                        }
+                    }
+
                     // Close the connection asynchronously
                     Task.Run(async () =>
                     {
