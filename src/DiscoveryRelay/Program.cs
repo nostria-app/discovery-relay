@@ -1,9 +1,14 @@
 using System.Text.Json.Serialization;
 using DiscoveryRelay;
 using DiscoveryRelay.Models;
+using DiscoveryRelay.Options;
 using DiscoveryRelay.Controllers;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Configure options
+builder.Services.Configure<RelayOptions>(
+    builder.Configuration.GetSection(RelayOptions.SectionName));
 
 // Add services to the container.
 builder.Services.AddControllers();

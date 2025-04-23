@@ -3,6 +3,8 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using DiscoveryRelay.Models;
+using DiscoveryRelay.Options;
+using Microsoft.Extensions.Options;
 
 namespace DiscoveryRelay;
 
@@ -10,13 +12,17 @@ public class WebSocketHandler : IDisposable
 {
     private readonly ConcurrentDictionary<string, WebSocket> _sockets = new();
     private readonly ConcurrentDictionary<string, HashSet<string>> _clientSubscriptions = new();
+    private readonly ConcurrentDictionary<string, DateTime> _lastActivityTime = new();
     private readonly ILogger<WebSocketHandler> _logger;
     private readonly JsonSerializerOptions _jsonOptions;
     private readonly Timer _statsTimer;
+    private readonly Timer _idleConnectionTimer;
+    private readonly RelayOptions _options;
 
-    public WebSocketHandler(ILogger<WebSocketHandler> logger)
+    public WebSocketHandler(ILogger<WebSocketHandler> logger, IOptions<RelayOptions> options)
     {
         _logger = logger;
+        _options = options.Value;
         
         // Configure JSON options for source-generated serialization
         _jsonOptions = new JsonSerializerOptions
@@ -27,8 +33,12 @@ public class WebSocketHandler : IDisposable
             TypeInfoResolver = NostrSerializationContext.Default
         };
         
-        // Setup timer for periodic logging - runs every minute
-        _statsTimer = new Timer(LogConnectionStats, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+        // Setup timer for periodic logging based on configuration
+        var statsInterval = TimeSpan.FromMinutes(_options.StatsLogIntervalMinutes);
+        _statsTimer = new Timer(LogConnectionStats, null, statsInterval, statsInterval);
+        
+        // Setup timer for checking idle connections (run every 30 seconds)
+        _idleConnectionTimer = new Timer(CheckIdleConnections, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
     }
 
     private void LogConnectionStats(object? state)
@@ -39,10 +49,49 @@ public class WebSocketHandler : IDisposable
         _logger.LogInformation("Active connections: {ConnectionCount}, Total subscriptions: {SubscriptionCount}", 
             connectionCount, totalSubscriptions);
     }
+    
+    private void CheckIdleConnections(object? state)
+    {
+        var idleTimeout = TimeSpan.FromMinutes(_options.DisconnectTimeoutMinutes);
+        var now = DateTime.UtcNow;
+        
+        foreach (var (socketId, lastActivity) in _lastActivityTime)
+        {
+            // If the connection has been idle for longer than the timeout
+            if (now - lastActivity > idleTimeout)
+            {
+                if (_sockets.TryGetValue(socketId, out var webSocket) && 
+                    webSocket.State == WebSocketState.Open)
+                {
+                    _logger.LogInformation("Disconnecting idle client {SocketId} (last activity: {LastActivity})", 
+                        socketId, lastActivity);
+                    
+                    // Close the connection asynchronously
+                    Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await CloseWebSocketAsync(socketId, webSocket, "Connection idle timeout");
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Error closing idle connection {SocketId}", socketId);
+                        }
+                    });
+                }
+                else
+                {
+                    // If the socket doesn't exist or is not open, remove the activity tracking
+                    _lastActivityTime.TryRemove(socketId, out _);
+                }
+            }
+        }
+    }
 
     public void Dispose()
     {
         _statsTimer?.Dispose();
+        _idleConnectionTimer?.Dispose();
     }
 
     public async Task HandleWebSocketAsync(HttpContext context, WebSocket webSocket)
@@ -50,6 +99,9 @@ public class WebSocketHandler : IDisposable
         var socketId = Guid.NewGuid().ToString();
         _sockets.TryAdd(socketId, webSocket);
         _clientSubscriptions.TryAdd(socketId, new HashSet<string>());
+        
+        // Track the initial connection time
+        _lastActivityTime[socketId] = DateTime.UtcNow;
 
         _logger.LogInformation("WebSocket connected: {SocketId}", socketId);
 
@@ -77,6 +129,9 @@ public class WebSocketHandler : IDisposable
         {
             try
             {
+                // Update last activity time on any message received
+                _lastActivityTime[socketId] = DateTime.UtcNow;
+                
                 // Process the received message
                 var receivedMessage = Encoding.UTF8.GetString(buffer, 0, receiveResult.Count);
                 _logger.LogInformation("Message received from {SocketId}: {Message}", socketId, receivedMessage);
@@ -215,20 +270,21 @@ public class WebSocketHandler : IDisposable
         }
     }
 
-    private async Task CloseWebSocketAsync(string socketId, WebSocket webSocket)
+    private async Task CloseWebSocketAsync(string socketId, WebSocket webSocket, string reason = "Closing")
     {
         // Only remove from collections and log if we haven't already done so
         if (_sockets.TryRemove(socketId, out _))
         {
             _clientSubscriptions.TryRemove(socketId, out _);
-            _logger.LogInformation("WebSocket closed: {SocketId}", socketId);
+            _lastActivityTime.TryRemove(socketId, out _);
+            _logger.LogInformation("WebSocket closed: {SocketId}, Reason: {Reason}", socketId, reason);
         }
 
         if (webSocket.State != WebSocketState.Closed && webSocket.State != WebSocketState.Aborted)
         {
             await webSocket.CloseAsync(
                 WebSocketCloseStatus.NormalClosure,
-                "Closing",
+                reason,
                 CancellationToken.None);
         }
     }
