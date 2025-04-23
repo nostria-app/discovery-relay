@@ -89,6 +89,7 @@ app.MapGet("/", (HttpContext context, IOptions<RelayOptions> options) =>
             Software = relayOptions.Software,
             Version = relayOptions.Version,
             PrivacyPolicy = relayOptions.PrivacyPolicy,
+            PostingPolicy = relayOptions.PostingPolicy,
             TermsOfService = relayOptions.TermsOfService
         };
 

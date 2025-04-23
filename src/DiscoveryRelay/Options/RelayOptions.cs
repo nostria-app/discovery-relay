@@ -64,6 +64,11 @@ public class RelayOptions
     /// </summary>
     public string? PrivacyPolicy { get; set; }
 
+        /// <summary>
+    /// Posting policy URL for the relay
+    /// </summary>
+    public string? PostingPolicy { get; set; }
+
     /// <summary>
     /// Terms of service URL for the relay
     /// </summary>
