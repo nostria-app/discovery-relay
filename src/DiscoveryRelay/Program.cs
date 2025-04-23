@@ -11,6 +11,17 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.Configure<RelayOptions>(
     builder.Configuration.GetSection(RelayOptions.SectionName));
 
+// Add CORS policy with a named policy for more control
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+});
+
 // Add services to the container.
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -32,6 +43,9 @@ var app = builder.Build();
 // Configure the HTTP request pipeline.
 app.UseHttpsRedirection();
 
+// Enable CORS with the named policy - it's important this comes early in the pipeline
+app.UseCors("AllowAll");
+
 // Configure WebSocket middleware
 var webSocketOptions = new WebSocketOptions
 {
@@ -40,59 +54,69 @@ var webSocketOptions = new WebSocketOptions
 
 app.UseWebSockets(webSocketOptions);
 
-// Map WebSocket endpoint to root path
-app.Use(async (context, next) =>
+// Map controllers for REST API - do this before custom middleware
+app.MapControllers();
+
+// Map a specific GET endpoint for Nostr relay information
+app.MapGet("/", async (HttpContext context, IOptions<RelayOptions> options) =>
 {
-    if (context.Request.Path == "/")
+    // Check if request is asking for Nostr relay information
+    string? acceptHeader = context.Request.Headers.Accept.ToString();
+    if (acceptHeader != null && acceptHeader.Contains("application/nostr+json"))
     {
-        // Check if request is asking for Nostr relay information
-        string? acceptHeader = context.Request.Headers.Accept.ToString();
-        if (acceptHeader != null && acceptHeader.Contains("application/nostr+json"))
-        {
-            // Get relay options from configuration
-            var relayOptions = context.RequestServices.GetRequiredService<IOptions<RelayOptions>>().Value;
-            
-            // Create and return the relay information document
-            var relayInfo = new NostrRelayInfo
-            {
-                Name = relayOptions.Name,
-                Description = relayOptions.Description,
-                Banner = relayOptions.Banner,
-                Icon = relayOptions.Icon,
-                Pubkey = relayOptions.Pubkey,
-                Contact = relayOptions.Contact,
-                SupportedNips = relayOptions.SupportedNips,
-                Software = relayOptions.Software,
-                Version = relayOptions.Version,
-                PrivacyPolicy = relayOptions.PrivacyPolicy,
-                TermsOfService = relayOptions.TermsOfService
-            };
-            
-            context.Response.ContentType = "application/nostr+json";
-            await context.Response.WriteAsJsonAsync(relayInfo, NostrSerializationContext.Default.NostrRelayInfo);
-            return;
-        }
+        var relayOptions = options.Value;
         
-        // Only handle WebSocket requests, let HTTP requests pass through
-        if (context.WebSockets.IsWebSocketRequest)
+        // Create the relay information document
+        var relayInfo = new NostrRelayInfo
         {
-            var webSocket = await context.WebSockets.AcceptWebSocketAsync();
-            var handler = app.Services.GetRequiredService<WebSocketHandler>();
-            await handler.HandleWebSocketAsync(context, webSocket);
-            return; // Don't call next() for WebSocket connections
-        }
+            Name = relayOptions.Name,
+            Description = relayOptions.Description,
+            Banner = relayOptions.Banner,
+            Icon = relayOptions.Icon,
+            Pubkey = relayOptions.Pubkey,
+            Contact = relayOptions.Contact,
+            SupportedNips = relayOptions.SupportedNips,
+            Software = relayOptions.Software,
+            Version = relayOptions.Version,
+            PrivacyPolicy = relayOptions.PrivacyPolicy,
+            TermsOfService = relayOptions.TermsOfService
+        };
+        
+        context.Response.ContentType = "application/nostr+json";
+        
+        // Add CORS headers explicitly for this endpoint for extra safety
+        context.Response.Headers.Append("Access-Control-Allow-Origin", "*");
+        context.Response.Headers.Append("Access-Control-Allow-Methods", "GET, OPTIONS");
+        context.Response.Headers.Append("Access-Control-Allow-Headers", "Content-Type, Accept");
+        
+        await context.Response.WriteAsJsonAsync(relayInfo, NostrSerializationContext.Default.NostrRelayInfo);
+        return;
     }
     
-    // Continue with HTTP processing for non-WebSocket requests
-    await next();
+    // If not a specific Nostr request, return a 404 or redirect to another page
+    context.Response.StatusCode = 404;
+    await context.Response.WriteAsync("Not Found");
+}).RequireCors("AllowAll"); // Explicitly require CORS on this endpoint
+
+// Handle WebSocket requests specifically 
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path == "/" && context.WebSockets.IsWebSocketRequest)
+    {
+        var webSocket = await context.WebSockets.AcceptWebSocketAsync();
+        var handler = app.Services.GetRequiredService<WebSocketHandler>();
+        await handler.HandleWebSocketAsync(context, webSocket);
+    }
+    else
+    {
+        // Continue with HTTP processing for non-WebSocket requests
+        await next();
+    }
 });
 
-// Enable static files
+// Enable static files - should come after other middleware
 app.UseDefaultFiles();
 app.UseStaticFiles();
-
-// Map controllers for REST API
-app.MapControllers();
 
 // Make sure index.html and other static files are properly served
 //app.MapFallbackToFile("index.html");
