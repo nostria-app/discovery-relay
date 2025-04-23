@@ -4,6 +4,7 @@ using DiscoveryRelay.Models;
 using DiscoveryRelay.Options;
 using DiscoveryRelay.Controllers;
 using Microsoft.Extensions.Options;
+using Microsoft.AspNetCore.Cors.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,14 +12,24 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.Configure<RelayOptions>(
     builder.Configuration.GetSection(RelayOptions.SectionName));
 
-// Add CORS policy with a named policy for more control
+// Add CORS policy with a named policy for more control - make it as permissive as possible for debugging
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
+    options.AddDefaultPolicy(policy =>
     {
         policy.AllowAnyOrigin()
               .AllowAnyHeader()
-              .AllowAnyMethod();
+              .AllowAnyMethod()
+              .WithExposedHeaders("*");
+    });
+    
+    // Add a specific policy for nostr requests
+    options.AddPolicy("NostrPolicy", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .WithExposedHeaders("*");
     });
 });
 
@@ -40,11 +51,11 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 
 var app = builder.Build();
 
+// CORS must be the very first middleware in the pipeline
+app.UseCors();
+
 // Configure the HTTP request pipeline.
 app.UseHttpsRedirection();
-
-// Enable CORS with the named policy - it's important this comes early in the pipeline
-app.UseCors("AllowAll");
 
 // Configure WebSocket middleware
 var webSocketOptions = new WebSocketOptions
@@ -57,17 +68,15 @@ app.UseWebSockets(webSocketOptions);
 // Map controllers for REST API - do this before custom middleware
 app.MapControllers();
 
-// Handle Nostr relay information requests
-app.Use(async (context, next) =>
+// Use a dedicated endpoint for Nostr relay info to ensure proper routing and CORS handling
+app.MapGet("/", (HttpContext context, IOptions<RelayOptions> options) =>
 {
-    if (context.Request.Path == "/" && 
-        context.Request.Method == "GET" && 
-        context.Request.Headers.Accept.ToString().Contains("application/nostr+json"))
+    // Only handle this endpoint for Nostr relay info requests
+    string acceptHeader = context.Request.Headers.Accept.ToString();
+    if (acceptHeader.Contains("application/nostr+json") || context.Request.Query.ContainsKey("nostr"))
     {
-        var options = context.RequestServices.GetRequiredService<IOptions<RelayOptions>>();
         var relayOptions = options.Value;
-        
-        // Create the relay information document
+
         var relayInfo = new NostrRelayInfo
         {
             Name = relayOptions.Name,
@@ -82,21 +91,16 @@ app.Use(async (context, next) =>
             PrivacyPolicy = relayOptions.PrivacyPolicy,
             TermsOfService = relayOptions.TermsOfService
         };
-        
+
         context.Response.ContentType = "application/nostr+json";
-        
-        // Add CORS headers explicitly for this endpoint for extra safety
-        context.Response.Headers.Append("Access-Control-Allow-Origin", "*");
-        context.Response.Headers.Append("Access-Control-Allow-Methods", "GET, OPTIONS");
-        context.Response.Headers.Append("Access-Control-Allow-Headers", "Content-Type, Accept");
-        
-        await context.Response.WriteAsJsonAsync(relayInfo, NostrSerializationContext.Default.NostrRelayInfo);
+        return Results.Json(relayInfo, NostrSerializationContext.Default.NostrRelayInfo);
     }
-    else
-    {
-        await next();
-    }
-});
+    
+    // For other requests to the root, let the pipeline continue
+    return Results.Empty;
+})
+.RequireCors("NostrPolicy")
+.ExcludeFromDescription(); // Don't include this in Swagger docs
 
 // Handle WebSocket requests specifically 
 app.Use(async (context, next) =>
