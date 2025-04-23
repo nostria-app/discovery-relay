@@ -1,6 +1,12 @@
 using System.Text.Json.Serialization;
+using DiscoveryRelay;
 
-var builder = WebApplication.CreateSlimBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
+
+// Add services to the container.
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSingleton<WebSocketHandler>();
 
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -8,6 +14,48 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 });
 
 var app = builder.Build();
+
+// Configure the HTTP request pipeline.
+app.UseHttpsRedirection();
+
+// Enable static files
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
+// Map controllers for REST API
+app.MapControllers();
+
+// Configure WebSocket middleware
+var webSocketOptions = new WebSocketOptions
+{
+    KeepAliveInterval = TimeSpan.FromMinutes(2)
+};
+
+app.UseWebSockets(webSocketOptions);
+
+// Map WebSocket endpoint to root path instead of /ws
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path == "/ws")
+    {
+        if (context.WebSockets.IsWebSocketRequest)
+        {
+            var webSocket = await context.WebSockets.AcceptWebSocketAsync();
+            var handler = app.Services.GetRequiredService<WebSocketHandler>();
+            await handler.HandleWebSocketAsync(context, webSocket);
+        }
+        else
+        {
+            // If it's not a WebSocket request, continue to next middleware
+            // This allows returning the default page when accessing root via HTTP
+            await next();
+        }
+    }
+    else
+    {
+        await next();
+    }
+});
 
 var sampleTodos = new Todo[] {
     new(1, "Walk the dog"),
