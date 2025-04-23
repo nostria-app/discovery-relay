@@ -18,13 +18,6 @@ var app = builder.Build();
 // Configure the HTTP request pipeline.
 app.UseHttpsRedirection();
 
-// Enable static files
-app.UseDefaultFiles();
-app.UseStaticFiles();
-
-// Map controllers for REST API
-app.MapControllers();
-
 // Configure WebSocket middleware
 var webSocketOptions = new WebSocketOptions
 {
@@ -33,29 +26,34 @@ var webSocketOptions = new WebSocketOptions
 
 app.UseWebSockets(webSocketOptions);
 
-// Map WebSocket endpoint to root path instead of /ws
+// Map WebSocket endpoint to root path
 app.Use(async (context, next) =>
 {
-    if (context.Request.Path == "/ws")
+    if (context.Request.Path == "/")
     {
+        // Only handle WebSocket requests, let HTTP requests pass through
         if (context.WebSockets.IsWebSocketRequest)
         {
             var webSocket = await context.WebSockets.AcceptWebSocketAsync();
             var handler = app.Services.GetRequiredService<WebSocketHandler>();
             await handler.HandleWebSocketAsync(context, webSocket);
-        }
-        else
-        {
-            // If it's not a WebSocket request, continue to next middleware
-            // This allows returning the default page when accessing root via HTTP
-            await next();
+            return; // Don't call next() for WebSocket connections
         }
     }
-    else
-    {
-        await next();
-    }
+    
+    // Continue with HTTP processing for non-WebSocket requests
+    await next();
 });
+
+// Enable static files
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
+// Map controllers for REST API
+app.MapControllers();
+
+// Make sure index.html and other static files are properly served
+//app.MapFallbackToFile("index.html");
 
 var sampleTodos = new Todo[] {
     new(1, "Walk the dog"),
