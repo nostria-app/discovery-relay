@@ -8,7 +8,10 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
+
+// Register WebSocketHandler as a singleton that will be properly disposed
 builder.Services.AddSingleton<WebSocketHandler>();
+builder.Services.AddHostedService<WebSocketBackgroundService>();
 
 // Configure JSON serialization using source generation to avoid reflection
 builder.Services.ConfigureHttpJsonOptions(options =>

@@ -6,12 +6,13 @@ using DiscoveryRelay.Models;
 
 namespace DiscoveryRelay;
 
-public class WebSocketHandler
+public class WebSocketHandler : IDisposable
 {
     private readonly ConcurrentDictionary<string, WebSocket> _sockets = new();
     private readonly ConcurrentDictionary<string, HashSet<string>> _clientSubscriptions = new();
     private readonly ILogger<WebSocketHandler> _logger;
     private readonly JsonSerializerOptions _jsonOptions;
+    private readonly Timer _statsTimer;
 
     public WebSocketHandler(ILogger<WebSocketHandler> logger)
     {
@@ -25,6 +26,23 @@ public class WebSocketHandler
             DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
             TypeInfoResolver = NostrSerializationContext.Default
         };
+        
+        // Setup timer for periodic logging - runs every minute
+        _statsTimer = new Timer(LogConnectionStats, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+    }
+
+    private void LogConnectionStats(object? state)
+    {
+        var connectionCount = _sockets.Count;
+        var totalSubscriptions = _clientSubscriptions.Values.Sum(x => x.Count);
+        
+        _logger.LogInformation("Active connections: {ConnectionCount}, Total subscriptions: {SubscriptionCount}", 
+            connectionCount, totalSubscriptions);
+    }
+
+    public void Dispose()
+    {
+        _statsTimer?.Dispose();
     }
 
     public async Task HandleWebSocketAsync(HttpContext context, WebSocket webSocket)
