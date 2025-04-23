@@ -57,13 +57,14 @@ app.UseWebSockets(webSocketOptions);
 // Map controllers for REST API - do this before custom middleware
 app.MapControllers();
 
-// Map a specific GET endpoint for Nostr relay information
-app.Map("/", async (HttpContext context, IOptions<RelayOptions> options, Func<Task> next) =>
+// Handle Nostr relay information requests
+app.Use(async (context, next) =>
 {
-    // Check if request is asking for Nostr relay information
-    string? acceptHeader = context.Request.Headers.Accept.ToString();
-    if (acceptHeader != null && acceptHeader.Contains("application/nostr+json"))
+    if (context.Request.Path == "/" && 
+        context.Request.Method == "GET" && 
+        context.Request.Headers.Accept.ToString().Contains("application/nostr+json"))
     {
+        var options = context.RequestServices.GetRequiredService<IOptions<RelayOptions>>();
         var relayOptions = options.Value;
         
         // Create the relay information document
@@ -93,10 +94,9 @@ app.Map("/", async (HttpContext context, IOptions<RelayOptions> options, Func<Ta
     }
     else
     {
-        // Continue to next middleware for non-Nostr requests
         await next();
     }
-}).RequireCors("AllowAll"); // Explicitly require CORS on this endpoint
+});
 
 // Handle WebSocket requests specifically 
 app.Use(async (context, next) =>
