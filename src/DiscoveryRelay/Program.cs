@@ -58,7 +58,7 @@ app.UseWebSockets(webSocketOptions);
 app.MapControllers();
 
 // Map a specific GET endpoint for Nostr relay information
-app.MapGet("/", async (HttpContext context, IOptions<RelayOptions> options) =>
+app.Map("/", async (HttpContext context, IOptions<RelayOptions> options, Func<Task> next) =>
 {
     // Check if request is asking for Nostr relay information
     string? acceptHeader = context.Request.Headers.Accept.ToString();
@@ -90,12 +90,12 @@ app.MapGet("/", async (HttpContext context, IOptions<RelayOptions> options) =>
         context.Response.Headers.Append("Access-Control-Allow-Headers", "Content-Type, Accept");
         
         await context.Response.WriteAsJsonAsync(relayInfo, NostrSerializationContext.Default.NostrRelayInfo);
-        return;
     }
-    
-    // If not a specific Nostr request, return a 404 or redirect to another page
-    context.Response.StatusCode = 404;
-    await context.Response.WriteAsync("Not Found");
+    else
+    {
+        // Continue to next middleware for non-Nostr requests
+        await next();
+    }
 }).RequireCors("AllowAll"); // Explicitly require CORS on this endpoint
 
 // Handle WebSocket requests specifically 
@@ -119,7 +119,7 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 
 // Make sure index.html and other static files are properly served
-//app.MapFallbackToFile("index.html");
+app.MapFallbackToFile("index.html");
 
 var sampleTodos = new Todo[] {
     new(1, "Walk the dog"),
