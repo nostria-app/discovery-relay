@@ -1,5 +1,7 @@
 using System.Text.Json.Serialization;
 using DiscoveryRelay;
+using DiscoveryRelay.Models;
+using DiscoveryRelay.Controllers;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -8,9 +10,12 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSingleton<WebSocketHandler>();
 
+// Configure JSON serialization using source generation to avoid reflection
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonSerializerContext.Default);
+    options.SerializerOptions.TypeInfoResolverChain.Insert(0, NostrSerializationContext.Default);
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
 
 var app = builder.Build();
@@ -77,5 +82,4 @@ public record Todo(int Id, string? Title, DateOnly? DueBy = null, bool IsComplet
 [JsonSerializable(typeof(Todo[]))]
 internal partial class AppJsonSerializerContext : JsonSerializerContext
 {
-
 }

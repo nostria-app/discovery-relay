@@ -36,6 +36,7 @@ public class HomeController : ControllerBase
     }
 }
 
+// This class needs to be public for source generation to work properly
 public class BroadcastRequest
 {
     public string? Message { get; set; }

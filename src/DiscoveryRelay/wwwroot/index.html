@@ -81,6 +81,22 @@
         </div>
         
         <div class="card">
+            <h2>Nostr Protocol Test</h2>
+            <div>
+                <h3>Subscribe</h3>
+                <input id="subscriptionId" type="text" placeholder="Subscription ID (e.g. sub:1)" value="sub:1">
+                <input id="authorId" type="text" placeholder="Author ID (hex)" value="17e2889fba01021d048a13fd0ba108ad31c38326295460c21e69c43fa8fbe515">
+                <input id="kindId" type="number" placeholder="Kind" value="10002">
+                <button id="subscribeBtn" disabled>Send REQ</button>
+            </div>
+            <div style="margin-top: 10px;">
+                <h3>Unsubscribe</h3>
+                <input id="closeSubscriptionId" type="text" placeholder="Subscription ID (e.g. sub:1)" value="sub:1">
+                <button id="unsubscribeBtn" disabled>Send CLOSE</button>
+            </div>
+        </div>
+        
+        <div class="card">
             <h2>Message Log</h2>
             <div id="log"></div>
             <button id="clearLogBtn">Clear Log</button>
@@ -101,6 +117,8 @@
         document.getElementById('sendBtn').addEventListener('click', sendMessage);
         document.getElementById('clearLogBtn').addEventListener('click', clearLog);
         document.getElementById('broadcastBtn').addEventListener('click', broadcastMessage);
+        document.getElementById('subscribeBtn').addEventListener('click', sendSubscription);
+        document.getElementById('unsubscribeBtn').addEventListener('click', sendUnsubscription);
         
         function connectWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -146,6 +164,45 @@
             }
         }
         
+        function sendSubscription() {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                const subscriptionId = document.getElementById('subscriptionId').value.trim();
+                const authorId = document.getElementById('authorId').value.trim();
+                const kindId = parseInt(document.getElementById('kindId').value.trim());
+                
+                // Create Nostr REQ message
+                const reqMessage = [
+                    "REQ",
+                    subscriptionId,
+                    {
+                        "kinds": [kindId],
+                        "authors": [authorId],
+                        "limit": 1
+                    }
+                ];
+                
+                const message = JSON.stringify(reqMessage);
+                socket.send(message);
+                log(`Sent REQ: ${message}`);
+            }
+        }
+        
+        function sendUnsubscription() {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                const subscriptionId = document.getElementById('closeSubscriptionId').value.trim();
+                
+                // Create Nostr CLOSE message
+                const closeMessage = [
+                    "CLOSE",
+                    subscriptionId
+                ];
+                
+                const message = JSON.stringify(closeMessage);
+                socket.send(message);
+                log(`Sent CLOSE: ${message}`);
+            }
+        }
+        
         function broadcastMessage() {
             const message = document.getElementById('broadcastInput').value.trim();
             
@@ -172,6 +229,8 @@
             const connectBtn = document.getElementById('connectBtn');
             const disconnectBtn = document.getElementById('disconnectBtn');
             const sendBtn = document.getElementById('sendBtn');
+            const subscribeBtn = document.getElementById('subscribeBtn');
+            const unsubscribeBtn = document.getElementById('unsubscribeBtn');
             
             if (isConnected) {
                 statusElem.textContent = 'Connected';
@@ -179,12 +238,16 @@
                 connectBtn.disabled = true;
                 disconnectBtn.disabled = false;
                 sendBtn.disabled = false;
+                subscribeBtn.disabled = false;
+                unsubscribeBtn.disabled = false;
             } else {
                 statusElem.textContent = 'Disconnected';
                 statusElem.className = 'status disconnected';
                 connectBtn.disabled = false;
                 disconnectBtn.disabled = true;
                 sendBtn.disabled = true;
+                subscribeBtn.disabled = true;
+                unsubscribeBtn.disabled = true;
             }
         }
         
