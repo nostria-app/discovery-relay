@@ -16,6 +16,7 @@ namespace DiscoveryRelay.Models;
 [JsonSerializable(typeof(int[]))]
 [JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(BroadcastRequest))]
+[JsonSerializable(typeof(NostrRelayInfo))]
 internal partial class NostrSerializationContext : JsonSerializerContext
 {
 }

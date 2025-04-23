@@ -3,6 +3,7 @@ using DiscoveryRelay;
 using DiscoveryRelay.Models;
 using DiscoveryRelay.Options;
 using DiscoveryRelay.Controllers;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -44,6 +45,34 @@ app.Use(async (context, next) =>
 {
     if (context.Request.Path == "/")
     {
+        // Check if request is asking for Nostr relay information
+        string? acceptHeader = context.Request.Headers.Accept.ToString();
+        if (acceptHeader != null && acceptHeader.Contains("application/nostr+json"))
+        {
+            // Get relay options from configuration
+            var relayOptions = context.RequestServices.GetRequiredService<IOptions<RelayOptions>>().Value;
+            
+            // Create and return the relay information document
+            var relayInfo = new NostrRelayInfo
+            {
+                Name = relayOptions.Name,
+                Description = relayOptions.Description,
+                Banner = relayOptions.Banner,
+                Icon = relayOptions.Icon,
+                Pubkey = relayOptions.Pubkey,
+                Contact = relayOptions.Contact,
+                SupportedNips = relayOptions.SupportedNips,
+                Software = relayOptions.Software,
+                Version = relayOptions.Version,
+                PrivacyPolicy = relayOptions.PrivacyPolicy,
+                TermsOfService = relayOptions.TermsOfService
+            };
+            
+            context.Response.ContentType = "application/nostr+json";
+            await context.Response.WriteAsJsonAsync(relayInfo, NostrSerializationContext.Default.NostrRelayInfo);
+            return;
+        }
+        
         // Only handle WebSocket requests, let HTTP requests pass through
         if (context.WebSockets.IsWebSocketRequest)
         {
