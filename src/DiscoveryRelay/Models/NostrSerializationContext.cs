@@ -17,6 +17,8 @@ namespace DiscoveryRelay.Models;
 [JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(BroadcastRequest))]
 [JsonSerializable(typeof(NostrRelayInfo))]
+[JsonSerializable(typeof(NostrEvent))]  // Add this line
+[JsonSerializable(typeof(List<List<string>>))]  // Add this to support NostrEvent.Tags
 internal partial class NostrSerializationContext : JsonSerializerContext
 {
 }

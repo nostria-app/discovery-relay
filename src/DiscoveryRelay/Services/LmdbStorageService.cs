@@ -24,7 +24,8 @@ public class LmdbStorageService : IDisposable
         _jsonOptions = new JsonSerializerOptions
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            WriteIndented = false
+            WriteIndented = false,
+            TypeInfoResolver = NostrSerializationContext.Default
         };
         
         Initialize();
@@ -44,20 +45,9 @@ public class LmdbStorageService : IDisposable
             // Initialize LMDB environment
             _env = new LightningEnvironment(_dbPath)
             {
-                // Increase map size significantly - consider your available disk space
-                // This example sets 10GB (adjust based on expected data volume)
                 MapSize = 1024L * 1024L * 1024L * 10L, // 10 GB
                 MaxDatabases = 5,
-                // Critical for high concurrency - should match or exceed max concurrent clients
                 MaxReaders = 4096,
-
-                    // Additional performance optimizations
-                //MapAsync = true,         // Enables asynchronous flushes to disk
-                //NoSync = false,          // Keep false for data safety, true for pure speed
-                //NoMetaSync = false,      // Keep false for data safety, true for pure speed
-                //NoReadAhead = false,     // Set to true if your access pattern is random
-                //NoLock = false,          // Keep false unless you have external locking
-                //NoTLS = true,            // Consider true for thread-local storage optimization
             };
             
             _env.Open(EnvironmentOpenFlags.NoSync);
@@ -97,7 +87,7 @@ public class LmdbStorageService : IDisposable
             using var db = tx.OpenDatabase(EventsDbName);
             
             var key = nostrEvent.Id;
-            var value = JsonSerializer.Serialize(nostrEvent, _jsonOptions);
+            var value = JsonSerializer.Serialize(nostrEvent, NostrSerializationContext.Default.NostrEvent);
             
             // Convert to byte arrays
             var keyBytes = System.Text.Encoding.UTF8.GetBytes(key);
@@ -111,35 +101,6 @@ public class LmdbStorageService : IDisposable
             
             return true;
         }
-        //catch (LightningException ex) when (ex.StatusCode == LightningDB.Native.Lmdb.MDB_KEYEXIST)
-        //{
-        //    // Key already exists, replace it
-        //    try
-        //    {
-        //        using var tx = _env.BeginTransaction();
-        //        using var db = tx.OpenDatabase(EventsDbName);
-                
-        //        var key = nostrEvent.Id;
-        //        var value = JsonSerializer.Serialize(nostrEvent, _jsonOptions);
-                
-        //        // Convert to byte arrays
-        //        var keyBytes = System.Text.Encoding.UTF8.GetBytes(key);
-        //        var valueBytes = System.Text.Encoding.UTF8.GetBytes(value);
-                
-        //        // Put in database with overwrite
-        //        tx.Put(db, keyBytes, valueBytes);
-        //        tx.Commit();
-                
-        //        _logger.LogDebug("Replaced existing event with ID {Id}, kind {Kind}", nostrEvent.Id, nostrEvent.Kind);
-                
-        //        return true;
-        //    }
-        //    catch (Exception replaceEx)
-        //    {
-        //        _logger.LogError(replaceEx, "Failed to replace event with ID {Id}", nostrEvent.Id);
-        //        return false;
-        //    }
-        //}
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to store event with ID {Id}", nostrEvent.Id);
@@ -164,7 +125,7 @@ public class LmdbStorageService : IDisposable
             if (tx.TryGet(db, keyBytes, out var valueBytes))
             {
                 var json = System.Text.Encoding.UTF8.GetString(valueBytes);
-                var nostrEvent = JsonSerializer.Deserialize<NostrEvent>(json, _jsonOptions);
+                var nostrEvent = JsonSerializer.Deserialize(json, NostrSerializationContext.Default.NostrEvent);
                 
                 return nostrEvent;
             }
