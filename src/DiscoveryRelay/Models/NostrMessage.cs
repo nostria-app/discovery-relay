@@ -38,3 +38,16 @@ public class NostrCloseMessage : NostrMessage
 
     public string SubscriptionId { get; set; } = string.Empty;
 }
+
+/// <summary>
+/// Represents an EVENT message in the Nostr protocol
+/// </summary>
+public class NostrEventMessage : NostrMessage
+{
+    public NostrEventMessage()
+    {
+        MessageType = "EVENT";
+    }
+
+    public NostrEvent? Event { get; set; }
+}

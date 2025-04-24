@@ -227,8 +227,62 @@ public class WebSocketHandler : IDisposable
             
             var messageType = jsonDocument.RootElement[0].GetString();
             
+            // Handle EVENT message
+            if (messageType == "EVENT" && jsonDocument.RootElement.GetArrayLength() >= 2)
+            {
+                try
+                {
+                    // Parse the event object
+                    var eventJson = jsonDocument.RootElement[1].GetRawText();
+                    var nostrEvent = JsonSerializer.Deserialize<NostrEvent>(eventJson, _jsonOptions);
+                    
+                    if (nostrEvent == null)
+                    {
+                        responseMessage = CreateNostrErrorResponse("Invalid event format");
+                        return true;
+                    }
+                    
+                    _logger.LogInformation("Received EVENT from {SocketId}, kind: {Kind}, id: {Id}", 
+                        socketId, nostrEvent.Kind, nostrEvent.Id);
+                    
+                    // Validate event
+                    if (string.IsNullOrEmpty(nostrEvent.Id) || string.IsNullOrEmpty(nostrEvent.PubKey) || 
+                        string.IsNullOrEmpty(nostrEvent.Signature))
+                    {
+                        responseMessage = CreateNostrErrorResponse("Invalid event: missing required fields");
+                        return true;
+                    }
+                    
+                    // Validate signature (commented out for now as it depends on the implementation)
+                    /*
+                    if (!nostrEvent.VerifySignature())
+                    {
+                        responseMessage = CreateNostrErrorResponse("Invalid signature");
+                        return true;
+                    }
+                    */
+                    
+                    // Process the event (relay to subscribers, store, etc.)
+                    // For now, just echo back an OK message
+                    
+                    // Create an OK message as per NIP-20
+                    responseMessage = $"[\"OK\",\"{nostrEvent.Id}\",true,\"\"]";
+                    
+                    // Broadcast the event to all clients with matching subscriptions
+                    // This would be implemented later
+                    
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error processing EVENT message");
+                    responseMessage = CreateNostrErrorResponse($"Error processing event: {ex.Message}");
+                    return true;
+                }
+            }
+            
             // Handle REQ message
-            if (messageType == "REQ" && jsonDocument.RootElement.GetArrayLength() >= 3)
+            else if (messageType == "REQ" && jsonDocument.RootElement.GetArrayLength() >= 3)
             {
                 var subscriptionId = jsonDocument.RootElement[1].GetString() ?? string.Empty;
                 
@@ -295,6 +349,12 @@ public class WebSocketHandler : IDisposable
             _logger.LogWarning(ex, "Failed to parse message as Nostr protocol: {Message}", message);
             return false;
         }
+    }
+
+    private string CreateNostrErrorResponse(string errorMessage)
+    {
+        // Create a NIP-20 compliant error response
+        return $"[\"NOTICE\",\"{errorMessage}\"]";
     }
 
     private async Task CloseWebSocketAsync(string socketId, WebSocket webSocket, string reason = "Closing")

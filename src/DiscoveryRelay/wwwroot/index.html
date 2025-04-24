@@ -94,6 +94,15 @@
                 <input id="closeSubscriptionId" type="text" placeholder="Subscription ID (e.g. sub:1)" value="sub:1">
                 <button id="unsubscribeBtn" disabled>Send CLOSE</button>
             </div>
+            <div style="margin-top: 15px;">
+                <h3>Send Event</h3>
+                <input id="eventPubkey" type="text" placeholder="Public Key (hex)" value="17e2889fba01021d048a13fd0ba108ad31c38326295460c21e69c43fa8fbe515">
+                <input id="eventKind" type="number" placeholder="Kind" value="1">
+                <input id="eventId" type="text" placeholder="Event ID (hex, auto-generated if empty)" value="">
+                <textarea id="eventContent" rows="2" placeholder="Content"></textarea>
+                <input id="eventSig" type="text" placeholder="Signature (hex, for testing only)" value="">
+                <button id="sendEventBtn" disabled>Send EVENT</button>
+            </div>
         </div>
         
         <div class="card">
@@ -119,6 +128,7 @@
         document.getElementById('broadcastBtn').addEventListener('click', broadcastMessage);
         document.getElementById('subscribeBtn').addEventListener('click', sendSubscription);
         document.getElementById('unsubscribeBtn').addEventListener('click', sendUnsubscription);
+        document.getElementById('sendEventBtn').addEventListener('click', sendEvent);
         
         function connectWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -231,6 +241,7 @@
             const sendBtn = document.getElementById('sendBtn');
             const subscribeBtn = document.getElementById('subscribeBtn');
             const unsubscribeBtn = document.getElementById('unsubscribeBtn');
+            const sendEventBtn = document.getElementById('sendEventBtn');
             
             if (isConnected) {
                 statusElem.textContent = 'Connected';
@@ -240,6 +251,7 @@
                 sendBtn.disabled = false;
                 subscribeBtn.disabled = false;
                 unsubscribeBtn.disabled = false;
+                sendEventBtn.disabled = false;
             } else {
                 statusElem.textContent = 'Disconnected';
                 statusElem.className = 'status disconnected';
@@ -248,6 +260,50 @@
                 sendBtn.disabled = true;
                 subscribeBtn.disabled = true;
                 unsubscribeBtn.disabled = true;
+                sendEventBtn.disabled = true;
+            }
+        }
+        
+        function sendEvent() {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                const pubkey = document.getElementById('eventPubkey').value.trim();
+                const kind = parseInt(document.getElementById('eventKind').value.trim());
+                const content = document.getElementById('eventContent').value.trim();
+                let id = document.getElementById('eventId').value.trim();
+                let sig = document.getElementById('eventSig').value.trim();
+                
+                // For testing purposes, generate random ID and signature if not provided
+                if (!id) {
+                    id = Array.from({length: 64}, () => 
+                        Math.floor(Math.random() * 16).toString(16)).join('');
+                    document.getElementById('eventId').value = id;
+                }
+                
+                if (!sig) {
+                    sig = Array.from({length: 128}, () => 
+                        Math.floor(Math.random() * 16).toString(16)).join('');
+                    document.getElementById('eventSig').value = sig;
+                }
+                
+                // Create Nostr EVENT message
+                const event = {
+                    id: id,
+                    pubkey: pubkey,
+                    created_at: Math.floor(Date.now() / 1000),
+                    kind: kind,
+                    tags: [],
+                    content: content,
+                    sig: sig
+                };
+                
+                const eventMessage = [
+                    "EVENT",
+                    event
+                ];
+                
+                const message = JSON.stringify(eventMessage);
+                socket.send(message);
+                log(`Sent EVENT: ${message}`);
             }
         }
         
