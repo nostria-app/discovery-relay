@@ -73,8 +73,17 @@ app.UseStaticFiles();
 app.MapFallbackToFile("index.html");
 
 // Use a dedicated endpoint for Nostr relay info to ensure proper routing and CORS handling
-app.MapGet("/", (HttpContext context, IOptions<RelayOptions> options) =>
+app.MapGet("/", async (HttpContext context, IOptions<RelayOptions> options) =>
 {
+    // Check if the request is for a static file (e.g., index.html)
+    if (context.Request.Headers.Accept.ToString().Contains("text/html") && !context.Request.Query.ContainsKey("nostr"))
+    {
+        // Serve the static file (index.html)
+        context.Response.ContentType = "text/html";
+        await context.Response.SendFileAsync("wwwroot/index.html");
+        return;
+    }
+
     // Only handle this endpoint for Nostr relay info requests
     string acceptHeader = context.Request.Headers.Accept.ToString();
     if (acceptHeader.Contains("application/nostr+json") || context.Request.Query.ContainsKey("nostr"))
@@ -98,11 +107,12 @@ app.MapGet("/", (HttpContext context, IOptions<RelayOptions> options) =>
         };
 
         context.Response.ContentType = "application/nostr+json";
-        return Results.Json(relayInfo, NostrSerializationContext.Default.NostrRelayInfo);
+        await context.Response.WriteAsJsonAsync(relayInfo, NostrSerializationContext.Default.NostrRelayInfo);
+        return;
     }
-    
+
     // For other requests to the root, let the pipeline continue
-    return Results.Empty;
+    context.Response.StatusCode = 404;
 })
 .RequireCors("NostrPolicy")
 .ExcludeFromDescription(); // Don't include this in Swagger docs
