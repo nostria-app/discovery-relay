@@ -82,9 +82,23 @@ public class LmdbStorageService : IDisposable
             return false;
         }
 
-        if (string.IsNullOrEmpty(nostrEvent.Id) || string.IsNullOrEmpty(nostrEvent.PubKey))
+        if (string.IsNullOrEmpty(nostrEvent.Id))
         {
-            _logger.LogWarning("Attempted to store event with empty ID or PubKey");
+            _logger.LogWarning("Attempted to store event with empty ID");
+            return false;
+        }
+
+        if (string.IsNullOrEmpty(nostrEvent.PubKey))
+        {
+            _logger.LogWarning("Attempted to store event {Id} with empty PubKey", nostrEvent.Id);
+            return false;
+        }
+
+        // Additional validation for created_at timestamp
+        if (nostrEvent.CreatedAt <= 0)
+        {
+            _logger.LogWarning("Attempted to store event {Id} with invalid CreatedAt timestamp: {CreatedAt}",
+                nostrEvent.Id, nostrEvent.CreatedAt);
             return false;
         }
 
@@ -105,6 +119,8 @@ public class LmdbStorageService : IDisposable
             {
                 // Convert existing value to NostrEvent
                 var existingJson = System.Text.Encoding.UTF8.GetString(existingValueBytes);
+                _logger.LogDebug("Found existing event for {Pubkey} and kind {Kind}: {ExistingJson}", pubkey, kind, existingJson);
+
                 var existingEvent = JsonSerializer.Deserialize(existingJson, NostrSerializationContext.Default.NostrEvent);
 
                 // Only update if the new event has a more recent CreatedAt timestamp
@@ -128,6 +144,8 @@ public class LmdbStorageService : IDisposable
 
             // Serialize and store the new event
             var value = JsonSerializer.Serialize(nostrEvent, NostrSerializationContext.Default.NostrEvent);
+            _logger.LogDebug("Serialized event JSON: {EventJson}", value);
+
             var valueBytes = System.Text.Encoding.UTF8.GetBytes(value);
 
             // Store the event with a single put operation
@@ -135,14 +153,15 @@ public class LmdbStorageService : IDisposable
 
             tx.Commit();
 
-            _logger.LogDebug("Stored event with ID {Id} for pubkey {Pubkey} and kind {Kind}, timestamp {Timestamp}",
+            _logger.LogDebug("Successfully stored event with ID {Id} for pubkey {Pubkey} and kind {Kind}, timestamp {Timestamp}",
                             nostrEvent.Id, pubkey, kind, nostrEvent.CreatedAt);
 
             return true;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to store event with ID {Id}", nostrEvent.Id);
+            _logger.LogError(ex, "Failed to store event with ID {Id} for pubkey {PubKey} and kind {Kind}",
+                nostrEvent.Id, nostrEvent.PubKey, nostrEvent.Kind);
             return false;
         }
     }
@@ -184,6 +203,173 @@ public class LmdbStorageService : IDisposable
         {
             _logger.LogError(ex, "Failed to retrieve event for pubkey {Pubkey} and kind {Kind}", pubkey, kind);
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Gets the total count of events in the database
+    /// </summary>
+    public Stats GetEventCount()
+    {
+        if (_disposed) throw new ObjectDisposedException(nameof(LmdbStorageService));
+
+        try
+        {
+            using var tx = _env.BeginTransaction(TransactionBeginFlags.ReadOnly);
+            using var db = tx.OpenDatabase(EventsDbName);
+
+            // Use database statistics to get count
+            var stat = db.DatabaseStats; // ;.Stat(tx);
+            return stat;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get event count");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Gets counts per event kind
+    /// </summary>
+    public Dictionary<int, int> GetEventCountsByKind()
+    {
+        if (_disposed) throw new ObjectDisposedException(nameof(LmdbStorageService));
+
+        var counts = new Dictionary<int, int>
+        {
+            { 3, 0 },
+            { 10002, 0 }
+        };
+
+        try
+        {
+            using var tx = _env.BeginTransaction(TransactionBeginFlags.ReadOnly);
+            using var db = tx.OpenDatabase(EventsDbName);
+
+            using var cursor = tx.CreateCursor(db);
+
+            var count = 0;
+
+            // Iterate through all key-value pairs
+            var result = cursor.Count(out count);
+
+            counts[0] = count;
+
+            // while (result.IsSuccess)
+            // {
+            //     var keyStr = System.Text.Encoding.UTF8.GetString(result.Key);
+            //     if (keyStr.EndsWith("::3"))
+            //     {
+            //         counts[3]++;
+            //     }
+            //     else if (keyStr.EndsWith("::10002"))
+            //     {
+            //         counts[10002]++;
+            //     }
+
+            //     if (!cursor.TryMoveNext())
+            //     {
+            //         break;
+            //     }
+
+            //     result = cursor.TryGetCurrent();
+            // }
+
+            return counts;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get event counts by kind");
+            return counts;
+        }
+    }
+
+    /// <summary>
+    /// Gets the most recent events from the database
+    /// </summary>
+    public List<NostrEvent> GetRecentEvents(int limit = 10)
+    {
+        if (_disposed) throw new ObjectDisposedException(nameof(LmdbStorageService));
+
+        var events = new List<NostrEvent>();
+
+        try
+        {
+            using var tx = _env.BeginTransaction(TransactionBeginFlags.ReadOnly);
+            using var db = tx.OpenDatabase(EventsDbName);
+
+            // Get all events first
+            var allEvents = new List<NostrEvent>();
+            using var cursor = tx.CreateCursor(db);
+
+            // Iterate through all entries
+            // if (cursor.TryMoveToFirst())
+            // {
+            //     var result = cursor.TryGetCurrent();
+            //     while (result.IsSuccess)
+            //     {
+            //         var json = System.Text.Encoding.UTF8.GetString(result.Value);
+            //         var nostrEvent = JsonSerializer.Deserialize(json, NostrSerializationContext.Default.NostrEvent);
+            //         if (nostrEvent != null)
+            //         {
+            //             allEvents.Add(nostrEvent);
+            //         }
+
+            //         if (!cursor.TryMoveNext())
+            //         {
+            //             break;
+            //         }
+
+            //         result = cursor.TryGetCurrent();
+            //     }
+            // }
+
+            // Sort by timestamp (descending) and take the most recent ones
+            events = allEvents
+                .OrderByDescending(e => e.CreatedAt)
+                .Take(limit)
+                .ToList();
+
+            return events;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get recent events");
+            return events;
+        }
+    }
+
+    /// <summary>
+    /// Gets database statistics
+    /// </summary>
+    public Dictionary<string, object> GetDatabaseStats()
+    {
+        if (_disposed) throw new ObjectDisposedException(nameof(LmdbStorageService));
+
+        var stats = new Dictionary<string, object>();
+
+        try
+        {
+            stats["totalEvents"] = GetEventCount();
+            stats["eventsByKind"] = GetEventCountsByKind();
+            stats["recentEvents"] = GetRecentEvents(10);
+
+            // Get environment stats
+            var envInfo = _env.EnvironmentStats;
+            stats["databasePath"] = _dbPath;
+            // stats["mapSize"] = envInfo.MapSize;
+            // stats["lastPageNumber"] = envInfo.LastPageNumber;
+            // stats["maxReaders"] = envInfo.MaxReaders;
+            // stats["numReaders"] = envInfo.NumReaders;
+
+            return stats;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get database statistics");
+            stats["error"] = ex.Message;
+            return stats;
         }
     }
 

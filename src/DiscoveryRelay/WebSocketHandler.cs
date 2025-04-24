@@ -60,6 +60,47 @@ public class WebSocketHandler : IDisposable
             connectionCount, totalSubscriptions);
     }
 
+    /// <summary>
+    /// Gets the count of active WebSocket connections
+    /// </summary>
+    public int GetActiveConnectionCount()
+    {
+        return _sockets.Count;
+    }
+
+    /// <summary>
+    /// Gets the total number of subscriptions across all clients
+    /// </summary>
+    public int GetTotalSubscriptionCount()
+    {
+        return _clientSubscriptions.Values.Sum(x => x.Count);
+    }
+
+    /// <summary>
+    /// Gets detailed statistics about WebSocket connections and subscriptions
+    /// </summary>
+    public Dictionary<string, object> GetConnectionStats()
+    {
+        var stats = new Dictionary<string, object>
+        {
+            { "activeConnections", _sockets.Count },
+            { "totalSubscriptions", _clientSubscriptions.Values.Sum(x => x.Count) },
+            { "connectionAges", _lastActivityTime.ToDictionary(
+                kvp => kvp.Key,
+                kvp => (DateTime.UtcNow - kvp.Value).TotalMinutes)
+            }
+        };
+
+        var subscriptionsByClient = new Dictionary<string, int>();
+        foreach (var client in _clientSubscriptions)
+        {
+            subscriptionsByClient[client.Key] = client.Value.Count;
+        }
+        
+        stats["subscriptionsByClient"] = subscriptionsByClient;
+        return stats;
+    }
+
     private void CheckIdleConnections(object? state)
     {
         var idleTimeout = TimeSpan.FromMinutes(_options.DisconnectTimeoutMinutes);
@@ -250,7 +291,7 @@ public class WebSocketHandler : IDisposable
 
                     // Process the received message
                     var receivedMessage = Encoding.UTF8.GetString(buffer, 0, receiveResult.Count);
-                    _logger.LogInformation("Message received from {SocketId}: {Message}", socketId, receivedMessage);
+                    _logger.LogDebug("Message received from {SocketId}: {Message}", socketId, receivedMessage);
 
                     // Try to parse as Nostr message
                     if (TryParseNostrMessage(socketId, receivedMessage, out string? responseMessage))
@@ -356,22 +397,39 @@ public class WebSocketHandler : IDisposable
                 {
                     // Parse the event object
                     var eventJson = jsonDocument.RootElement[1].GetRawText();
+                    _logger.LogDebug("Raw event JSON: {EventJson}", eventJson);
+
                     var nostrEvent = JsonSerializer.Deserialize<NostrEvent>(eventJson, _jsonOptions);
 
                     if (nostrEvent == null)
                     {
+                        _logger.LogWarning("EVENT deserialization failed - returned null object");
                         responseMessage = CreateNostrErrorResponse("Invalid event format");
                         return true;
                     }
 
-                    _logger.LogInformation("Received EVENT from {SocketId}, kind: {Kind}, id: {Id}",
-                        socketId, nostrEvent.Kind, nostrEvent.Id);
+                    _logger.LogDebug("Received EVENT from {SocketId}, kind: {Kind}, id: {Id}, pubkey: {PubKey}, created_at: {CreatedAt}, signature length: {SigLength}",
+                        socketId, nostrEvent.Kind, nostrEvent.Id, nostrEvent.PubKey, nostrEvent.CreatedAt, nostrEvent.Signature?.Length ?? 0);
 
                     // Validate event
-                    if (string.IsNullOrEmpty(nostrEvent.Id) || string.IsNullOrEmpty(nostrEvent.PubKey) ||
-                        string.IsNullOrEmpty(nostrEvent.Signature))
+                    if (string.IsNullOrEmpty(nostrEvent.Id))
                     {
-                        responseMessage = CreateNostrErrorResponse("Invalid event: missing required fields");
+                        _logger.LogWarning("Rejected event: missing ID field");
+                        responseMessage = CreateNostrErrorResponse("Invalid event: missing ID field");
+                        return true;
+                    }
+
+                    if (string.IsNullOrEmpty(nostrEvent.PubKey))
+                    {
+                        _logger.LogWarning("Rejected event {Id}: missing PubKey field", nostrEvent.Id);
+                        responseMessage = CreateNostrErrorResponse("Invalid event: missing PubKey field");
+                        return true;
+                    }
+
+                    if (string.IsNullOrEmpty(nostrEvent.Signature))
+                    {
+                        _logger.LogWarning("Rejected event {Id}: missing Signature field", nostrEvent.Id);
+                        responseMessage = CreateNostrErrorResponse("Invalid event: missing Signature field");
                         return true;
                     }
 
@@ -383,26 +441,47 @@ public class WebSocketHandler : IDisposable
                         return true;
                     }
 
-                    // Validate signature (commented out for now as it depends on the implementation)
-                    /*
-                    if (!nostrEvent.VerifySignature())
+                    // Validate CreatedAt timestamp
+                    if (nostrEvent.CreatedAt <= 0)
                     {
-                        responseMessage = CreateNostrErrorResponse("Invalid signature");
+                        _logger.LogWarning("Rejected event {Id}: invalid or missing CreatedAt timestamp: {CreatedAt}",
+                            nostrEvent.Id, nostrEvent.CreatedAt);
+                        responseMessage = $"[\"OK\",\"{nostrEvent.Id}\",false,\"invalid: created_at timestamp is invalid\"]";
                         return true;
                     }
-                    */
+
+                    // Validate signature
+                    string? validationError = nostrEvent.VerifySignature();
+                    if (validationError != null)
+                    {
+                        _logger.LogWarning("Rejected event {Id}: signature validation failed: {Error}",
+                            nostrEvent.Id, validationError);
+                        responseMessage = $"[\"OK\",\"{nostrEvent.Id}\",false,\"invalid: {validationError}\"]";
+                        return true;
+                    }
+
+                    // Validate the ID
+                    string calculatedId = nostrEvent.CalculateId();
+                    if (calculatedId != nostrEvent.Id)
+                    {
+                        _logger.LogWarning("Rejected event: ID mismatch. Provided: {ProvidedId}, Calculated: {CalculatedId}",
+                            nostrEvent.Id, calculatedId);
+                        responseMessage = $"[\"OK\",\"{nostrEvent.Id}\",false,\"invalid: event id does not match calculated id\"]";
+                        return true;
+                    }
 
                     // Store the event in LMDB
+                    _logger.LogDebug("Attempting to store event {Id} in LMDB", nostrEvent.Id);
                     bool stored = _storageService.StoreEvent(nostrEvent);
 
                     if (!stored)
                     {
-                        _logger.LogWarning("Failed to store event {Id} in LMDB", nostrEvent.Id);
-                        responseMessage = CreateNostrErrorResponse("Failed to store event");
+                        _logger.LogWarning("Failed to store event {Id} in LMDB - storage service returned false", nostrEvent.Id);
+                        responseMessage = $"[\"OK\",\"{nostrEvent.Id}\",false,\"error: failed to store event\"]";
                         return true;
                     }
 
-                    _logger.LogInformation("Event {Id} successfully stored in LMDB", nostrEvent.Id);
+                    _logger.LogDebug("Event {Id} successfully stored in LMDB", nostrEvent.Id);
 
                     // Create an OK message as per NIP-20
                     responseMessage = $"[\"OK\",\"{nostrEvent.Id}\",true,\"\"]";
