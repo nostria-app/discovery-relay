@@ -1,8 +1,16 @@
 # Discovery Relay
 
-Nostr Relay that supports the concept of Discovery Relays.
+### Optimized Nostr relay to help Nostr scale globally
 
-Built for high-performance using the LMDB and C#.
+![Discovery Relay](discovery-relay.jpg)
+
+Built in .NET for high performance, with ahead-of-time compilation, pre-defined types (not using Reflection). Utilizes LMDB for extreme performance. Key-Value storage with single table, avoiding supporting indexes. Supports only kind 3 and kind 10002, which is what Nostr clients should rely upon for discovery.
+
+## Discovery Relays
+
+Learn more: https://medium.com/@sondreb/discovery-relays-e2b0bd00feec
+
+Also check out: https://medium.com/@sondreb/scaling-nostr-e50276774367
 
 ## Kudos
 

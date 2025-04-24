@@ -20,6 +20,7 @@ public class WebSocketHandler : IDisposable
     private readonly Timer _idleConnectionTimer;
     private readonly RelayOptions _options;
     private readonly LmdbStorageService _storageService;
+    private readonly CancellationTokenSource _shutdownTokenSource = new CancellationTokenSource();
 
     // Add allowed event kinds
     private readonly HashSet<int> _allowedEventKinds = new() { 3, 10002 };
@@ -126,8 +127,73 @@ public class WebSocketHandler : IDisposable
 
     public void Dispose()
     {
+        _logger.LogInformation("WebSocketHandler is being disposed");
+
+        // Signal cancellation to all ongoing operations
+        _shutdownTokenSource.Cancel();
+
+        // Stop timers immediately
+        _statsTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+        _idleConnectionTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+
+        // Close all WebSocket connections
+        CloseAllSockets().GetAwaiter().GetResult();
+
+        // Finally dispose of the timers and cancellation token source
         _statsTimer?.Dispose();
         _idleConnectionTimer?.Dispose();
+        _shutdownTokenSource.Dispose();
+
+        _logger.LogInformation("WebSocketHandler disposed successfully");
+    }
+
+    private async Task CloseAllSockets()
+    {
+        if (_sockets.IsEmpty)
+        {
+            return;
+        }
+
+        _logger.LogInformation("Closing {Count} WebSocket connections due to shutdown", _sockets.Count);
+
+        // Create a list of tasks to close all sockets with a short timeout
+        var closeTasks = new List<Task>();
+
+        foreach (var (socketId, webSocket) in _sockets)
+        {
+            try
+            {
+                if (webSocket.State == WebSocketState.Open)
+                {
+                    var closeTask = webSocket.CloseAsync(
+                        WebSocketCloseStatus.NormalClosure,
+                        "Server shutting down",
+                        CancellationToken.None);
+
+                    // Use a timeout to ensure we don't wait too long
+                    var timeoutTask = Task.Delay(1000); // 1 second timeout
+
+                    closeTasks.Add(Task.WhenAny(closeTask, timeoutTask));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error closing WebSocket {SocketId} during shutdown", socketId);
+            }
+        }
+
+        // Wait for all close operations to complete or timeout
+        if (closeTasks.Count > 0)
+        {
+            await Task.WhenAll(closeTasks);
+        }
+
+        // Clear all collections
+        _sockets.Clear();
+        _clientSubscriptions.Clear();
+        _lastActivityTime.Clear();
+
+        _logger.LogInformation("All WebSocket connections closed");
     }
 
     public async Task HandleWebSocketAsync(HttpContext context, WebSocket webSocket)
@@ -143,7 +209,13 @@ public class WebSocketHandler : IDisposable
 
         try
         {
-            await ProcessWebSocketAsync(socketId, webSocket);
+            // Pass the shutdown token to ProcessWebSocketAsync
+            await ProcessWebSocketAsync(socketId, webSocket, _shutdownTokenSource.Token);
+        }
+        catch (OperationCanceledException) when (_shutdownTokenSource.IsCancellationRequested)
+        {
+            // This is expected during shutdown, log at a lower level
+            _logger.LogDebug("WebSocket {SocketId} processing canceled due to shutdown", socketId);
         }
         catch (Exception ex)
         {
@@ -155,67 +227,108 @@ public class WebSocketHandler : IDisposable
         }
     }
 
-    private async Task ProcessWebSocketAsync(string socketId, WebSocket webSocket)
+    private async Task ProcessWebSocketAsync(string socketId, WebSocket webSocket, CancellationToken cancellationToken)
     {
         var buffer = new byte[1024 * 4];
-        var receiveResult = await webSocket.ReceiveAsync(
-            new ArraySegment<byte>(buffer), CancellationToken.None);
+        WebSocketReceiveResult receiveResult;
 
-        while (!receiveResult.CloseStatus.HasValue)
+        try
         {
-            try
+            // Use the cancellation token for receiving messages
+            receiveResult = await webSocket.ReceiveAsync(
+                new ArraySegment<byte>(buffer), cancellationToken);
+
+            while (!receiveResult.CloseStatus.HasValue)
             {
-                // Update last activity time on any message received
-                _lastActivityTime[socketId] = DateTime.UtcNow;
-
-                // Process the received message
-                var receivedMessage = Encoding.UTF8.GetString(buffer, 0, receiveResult.Count);
-                _logger.LogInformation("Message received from {SocketId}: {Message}", socketId, receivedMessage);
-
-                // Try to parse as Nostr message
-                if (TryParseNostrMessage(socketId, receivedMessage, out string? responseMessage))
+                try
                 {
-                    // If we have a response, send it back
-                    if (!string.IsNullOrEmpty(responseMessage))
+                    // Check cancellation frequently
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    // Update last activity time on any message received
+                    _lastActivityTime[socketId] = DateTime.UtcNow;
+
+                    // Process the received message
+                    var receivedMessage = Encoding.UTF8.GetString(buffer, 0, receiveResult.Count);
+                    _logger.LogInformation("Message received from {SocketId}: {Message}", socketId, receivedMessage);
+
+                    // Try to parse as Nostr message
+                    if (TryParseNostrMessage(socketId, receivedMessage, out string? responseMessage))
                     {
-                        var responseBytes = Encoding.UTF8.GetBytes(responseMessage);
+                        // If we have a response, send it back
+                        if (!string.IsNullOrEmpty(responseMessage))
+                        {
+                            var responseBytes = Encoding.UTF8.GetBytes(responseMessage);
+                            await webSocket.SendAsync(
+                                new ArraySegment<byte>(responseBytes, 0, responseBytes.Length),
+                                WebSocketMessageType.Text,
+                                true,
+                                cancellationToken);
+                        }
+                    }
+                    else
+                    {
+                        // If not a Nostr message, echo the message back as before
+                        var echoMessage = $"Echo: {receivedMessage}";
+                        var echoBytes = Encoding.UTF8.GetBytes(echoMessage);
+
                         await webSocket.SendAsync(
-                            new ArraySegment<byte>(responseBytes, 0, responseBytes.Length),
+                            new ArraySegment<byte>(echoBytes, 0, echoBytes.Length),
                             WebSocketMessageType.Text,
                             true,
-                            CancellationToken.None);
+                            cancellationToken);
                     }
                 }
-                else
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
-                    // If not a Nostr message, echo the message back as before
-                    var echoMessage = $"Echo: {receivedMessage}";
-                    var echoBytes = Encoding.UTF8.GetBytes(echoMessage);
+                    // This is expected during shutdown, break out of the loop
+                    _logger.LogDebug("Processing WebSocket {SocketId} canceled", socketId);
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error processing message from {SocketId}: {Message}", socketId, ex.Message);
 
-                    await webSocket.SendAsync(
-                        new ArraySegment<byte>(echoBytes, 0, echoBytes.Length),
-                        WebSocketMessageType.Text,
-                        true,
-                        CancellationToken.None);
+                    // Send error message back to client
+                    var errorMessage = $"Error processing message: {ex.Message}";
+                    var errorBytes = Encoding.UTF8.GetBytes(errorMessage);
+
+                    try
+                    {
+                        await webSocket.SendAsync(
+                            new ArraySegment<byte>(errorBytes, 0, errorBytes.Length),
+                            WebSocketMessageType.Text,
+                            true,
+                            CancellationToken.None); // Use a non-cancelable token for error responses
+                    }
+                    catch
+                    {
+                        // Ignore any errors while sending error message
+                    }
+                }
+
+                // Get next message, using a short timeout combined with cancellation token
+                try
+                {
+                    receiveResult = await webSocket.ReceiveAsync(
+                        new ArraySegment<byte>(buffer), cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    // Exit the loop if we're shutting down
+                    break;
                 }
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error processing message from {SocketId}: {Message}", socketId, ex.Message);
-
-                // Send error message back to client
-                var errorMessage = $"Error processing message: {ex.Message}";
-                var errorBytes = Encoding.UTF8.GetBytes(errorMessage);
-                await webSocket.SendAsync(
-                    new ArraySegment<byte>(errorBytes, 0, errorBytes.Length),
-                    WebSocketMessageType.Text,
-                    true,
-                    CancellationToken.None);
-            }
-
-            // Get next message
-            receiveResult = await webSocket.ReceiveAsync(
-                new ArraySegment<byte>(buffer), CancellationToken.None);
+        }
+        catch (WebSocketException ex) when (ex.WebSocketErrorCode == WebSocketError.ConnectionClosedPrematurely)
+        {
+            // This is expected when client disconnects abruptly
+            _logger.LogInformation("WebSocket {SocketId} was closed prematurely by the client", socketId);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // This is expected during shutdown
+            _logger.LogDebug("WebSocket {SocketId} processing canceled due to shutdown", socketId);
         }
     }
 
@@ -388,31 +501,13 @@ public class WebSocketHandler : IDisposable
                     Task.Run(async () =>
                     {
                         await SendMatchingEvents(socketId, subscriptionId, requestedAuthors, requestedKinds);
+                        SendEoseMessage(socketId, subscriptionId);
                     });
                 }
-
-                // Send EOSE to indicate that we've processed the subscription
-                var eoseMessage = $"[\"EOSE\",\"{subscriptionId}\"]";
-                var eoseBytes = Encoding.UTF8.GetBytes(eoseMessage);
-
-                if (_sockets.TryGetValue(socketId, out var webSocket) &&
-                    webSocket.State == WebSocketState.Open)
+                else
                 {
-                    Task.Run(async () =>
-                    {
-                        try
-                        {
-                            await webSocket.SendAsync(
-                                new ArraySegment<byte>(eoseBytes),
-                                WebSocketMessageType.Text,
-                                true,
-                                CancellationToken.None);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "Error sending EOSE to {SocketId}", socketId);
-                        }
-                    });
+                    // If no authors requested, simply send EOSE
+                    SendEoseMessage(socketId, subscriptionId);
                 }
 
                 return true;
@@ -477,8 +572,18 @@ public class WebSocketHandler : IDisposable
         // If no specific kinds requested, use all allowed kinds
         if (kinds.Count == 0)
         {
-            kinds.AddRange(_allowedEventKinds);
+            _logger.LogDebug("No kinds specified in REQ request for subscription {SubscriptionId}. Must only be 3 and 10002", subscriptionId);
+            return;
         }
+
+        // If no specific authors requested, we can't do anything
+        if (authors.Count == 0)
+        {
+            _logger.LogDebug("No authors specified in REQ request for subscription {SubscriptionId}", subscriptionId);
+            return;
+        }
+
+        int eventsSent = 0;
 
         foreach (var author in authors)
         {
@@ -507,6 +612,8 @@ public class WebSocketHandler : IDisposable
                             true,
                             CancellationToken.None);
 
+                        eventsSent++;
+
                         _logger.LogDebug("Sent event {Id} to client {SocketId} for subscription {SubscriptionId}",
                             eventObj.Id, socketId, subscriptionId);
                     }
@@ -516,6 +623,38 @@ public class WebSocketHandler : IDisposable
                     }
                 }
             }
+        }
+
+        _logger.LogInformation("Sent {EventCount} events to client {SocketId} for subscription {SubscriptionId}",
+            eventsSent, socketId, subscriptionId);
+    }
+
+    private void SendEoseMessage(string socketId, string subscriptionId)
+    {
+        var eoseMessage = $"[\"EOSE\",\"{subscriptionId}\"]";
+        var eoseBytes = Encoding.UTF8.GetBytes(eoseMessage);
+
+        if (_sockets.TryGetValue(socketId, out var webSocket) &&
+            webSocket.State == WebSocketState.Open)
+        {
+            Task.Run(async () =>
+            {
+                try
+                {
+                    await webSocket.SendAsync(
+                        new ArraySegment<byte>(eoseBytes),
+                        WebSocketMessageType.Text,
+                        true,
+                        CancellationToken.None);
+
+                    _logger.LogDebug("Sent EOSE to client {SocketId} for subscription {SubscriptionId}",
+                        socketId, subscriptionId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error sending EOSE to {SocketId}", socketId);
+                }
+            });
         }
     }
 
