@@ -1,0 +1,12 @@
+{
+    "dotnet.defaultSolution": "DiscoveryRelay.sln",
+    "dotnet.server.useOmnisharp": true,
+    "editor.formatOnSave": true,
+    "csharp.format.enable": true,
+    "omnisharp.enableRoslynAnalyzers": true,
+    "omnisharp.enableEditorConfigSupport": true,
+    "files.exclude": {
+        "**/bin": false,
+        "**/obj": false
+    }
+}

@@ -5,8 +5,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <PublishAot>true</PublishAot>
     <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+    <!-- Disable AOT during development -->
+    <PublishAot Condition="'$(Configuration)' != 'Release'">false</PublishAot>
+    <PublishAot Condition="'$(Configuration)' == 'Release'">true</PublishAot>
+    <!-- Enable hot reload -->
+    <WatchEnable>true</WatchEnable>
   </PropertyGroup>
 
   <ItemGroup>
