@@ -1,0 +1,5 @@
+namespace DiscoveryRelay.Models;
+
+public class NostrEvent {
+    
+}

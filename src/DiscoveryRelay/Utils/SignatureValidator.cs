@@ -1,10 +1,11 @@
 using System.Text;
 using System.Security.Cryptography;
 using NBitcoin.Secp256k1;
+using DiscoveryRelay.Models;
 
 namespace DiscoveryRelay.Utils;
 
-public static class SignatureValidator
+public static class SignatureValidator : IEventValidator
 {
     /// <summary>
     /// Validates a Nostr event signature using SecpSchnorr.
@@ -13,7 +14,7 @@ public static class SignatureValidator
     /// <param name="signatureHex">The signature in hexadecimal format.</param>
     /// <param name="eventHashHex">The event hash in hexadecimal format.</param>
     /// <returns>True if the signature is valid, otherwise false.</returns>
-    public static bool ValidateSignature(string pubKeyHex, string signatureHex, string eventHashHex)
+    public static bool ValidateSignature(NostrEvent: event, string pubKeyHex, string signatureHex, string eventHashHex)
     {
         try
         {
