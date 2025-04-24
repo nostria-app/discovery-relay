@@ -17,6 +17,9 @@ builder.Services.Configure<RelayOptions>(
 builder.Services.Configure<LmdbOptions>(builder.Configuration.GetSection(LmdbOptions.ConfigSection));
 builder.Services.AddSingleton<LmdbStorageService>();
 
+// Add the EventFilterService
+builder.Services.AddSingleton<EventFilterService>();
+
 // Add CORS policy with a named policy for more control - make it as permissive as possible for debugging
 builder.Services.AddCors(options =>
 {

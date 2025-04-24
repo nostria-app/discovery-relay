@@ -138,7 +138,10 @@
                     <h3>Subscribe</h3>
                     <input id="subscriptionId" type="text" placeholder="Subscription ID (e.g. sub:1)" value="sub:1">
                     <input id="authorId" type="text" placeholder="Author ID (hex)" value="17e2889fba01021d048a13fd0ba108ad31c38326295460c21e69c43fa8fbe515">
-                    <input id="kindId" type="number" placeholder="Kind" value="10002">
+                    <select id="kindId">
+                        <option value="3">Kind 3 (Contacts)</option>
+                        <option value="10002" selected>Kind 10002 (Relay List Metadata)</option>
+                    </select>
                     <button id="subscribeBtn" disabled>Send REQ</button>
                 </div>
                 <div style="margin-top: 10px;">
@@ -149,11 +152,17 @@
                 <div style="margin-top: 15px;">
                     <h3>Send Event</h3>
                     <input id="eventPubkey" type="text" placeholder="Public Key (hex)" value="17e2889fba01021d048a13fd0ba108ad31c38326295460c21e69c43fa8fbe515">
-                    <input id="eventKind" type="number" placeholder="Kind" value="1">
+                    <select id="eventKind">
+                        <option value="3">Kind 3 (Contacts)</option>
+                        <option value="10002" selected>Kind 10002 (Relay List Metadata)</option>
+                    </select>
                     <input id="eventId" type="text" placeholder="Event ID (hex, auto-generated if empty)" value="">
                     <textarea id="eventContent" rows="2" placeholder="Content"></textarea>
                     <input id="eventSig" type="text" placeholder="Signature (hex, for testing only)" value="">
                     <button id="sendEventBtn" disabled>Send EVENT</button>
+                </div>
+                <div class="alert" style="margin-top: 10px; color: #856404; background-color: #fff3cd; padding: 10px; border-radius: 4px;">
+                    <strong>Note:</strong> This relay only accepts events of kind 3 (Contacts) and 10002 (Relay List Metadata)
                 </div>
             </div>
             
@@ -655,7 +664,7 @@
                     {
                         "kinds": [kindId],
                         "authors": [authorId],
-                        "limit": 1
+                        "limit": 10
                     }
                 ];
                 

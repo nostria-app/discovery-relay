@@ -21,6 +21,9 @@ public class WebSocketHandler : IDisposable
     private readonly RelayOptions _options;
     private readonly LmdbStorageService _storageService;
 
+    // Add allowed event kinds
+    private readonly HashSet<int> _allowedEventKinds = new() { 3, 10002 };
+
     public WebSocketHandler(
         ILogger<WebSocketHandler> logger, 
         IOptions<RelayOptions> options,
@@ -259,6 +262,14 @@ public class WebSocketHandler : IDisposable
                         return true;
                     }
                     
+                    // Check if the event kind is allowed
+                    if (!_allowedEventKinds.Contains(nostrEvent.Kind))
+                    {
+                        _logger.LogWarning("Rejected event {Id} with unsupported kind: {Kind}", nostrEvent.Id, nostrEvent.Kind);
+                        responseMessage = $"[\"OK\",\"{nostrEvent.Id}\",false,\"restricted: only kinds 3 and 10002 are accepted\"]";
+                        return true;
+                    }
+                    
                     // Validate signature (commented out for now as it depends on the implementation)
                     /*
                     if (!nostrEvent.VerifySignature())
@@ -301,6 +312,36 @@ public class WebSocketHandler : IDisposable
             {
                 var subscriptionId = jsonDocument.RootElement[1].GetString() ?? string.Empty;
                 
+                // Check if any filter has kinds, and if so, ensure they're only the allowed kinds
+                bool hasInvalidKinds = false;
+                string invalidKindsMessage = string.Empty;
+                
+                // Iterate through all filters in the REQ
+                for (int i = 2; i < jsonDocument.RootElement.GetArrayLength(); i++)
+                {
+                    if (jsonDocument.RootElement[i].TryGetProperty("kinds", out var kindsElement))
+                    {
+                        if (kindsElement.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var kindElement in kindsElement.EnumerateArray())
+                            {
+                                if (kindElement.TryGetInt32(out int kind) && !_allowedEventKinds.Contains(kind))
+                                {
+                                    hasInvalidKinds = true;
+                                    _logger.LogWarning("Client {SocketId} attempted to subscribe to unsupported kind: {Kind}", 
+                                        socketId, kind);
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                if (hasInvalidKinds)
+                {
+                    responseMessage = CreateNostrErrorResponse("restricted: only kinds 3 and 10002 are supported");
+                    return true;
+                }
+                
                 if (_clientSubscriptions.TryGetValue(socketId, out var subscriptions))
                 {
                     subscriptions.Add(subscriptionId);
@@ -315,7 +356,27 @@ public class WebSocketHandler : IDisposable
                     }
                 }
                 
-                responseMessage = $"Subscription {subscriptionId} registered";
+                // Send EOSE right away to indicate that we've processed the subscription
+                var eoseMessage = $"[\"EOSE\",\"{subscriptionId}\"]";
+                var eoseBytes = Encoding.UTF8.GetBytes(eoseMessage);
+                
+                if (_sockets.TryGetValue(socketId, out var webSocket) && 
+                    webSocket.State == WebSocketState.Open)
+                {
+                    Task.Run(async () => {
+                        try {
+                            await webSocket.SendAsync(
+                                new ArraySegment<byte>(eoseBytes),
+                                WebSocketMessageType.Text,
+                                true,
+                                CancellationToken.None);
+                        }
+                        catch (Exception ex) {
+                            _logger.LogError(ex, "Error sending EOSE to {SocketId}", socketId);
+                        }
+                    });
+                }
+                
                 return true;
             }
             // Handle CLOSE message

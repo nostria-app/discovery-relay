@@ -47,7 +47,7 @@ public class RelayOptions
     /// <summary>
     /// Supported NIPs by the relay
     /// </summary>
-    public int[] SupportedNips { get; set; } = new[] { 1, 2, 11, 20 };
+    public int[] SupportedNips { get; set; } = new[] { 1, 2, 9, 11, 20 };
 
     /// <summary>
     /// Software URL for the relay
