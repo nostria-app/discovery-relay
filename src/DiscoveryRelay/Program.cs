@@ -65,8 +65,12 @@ var webSocketOptions = new WebSocketOptions
 
 app.UseWebSockets(webSocketOptions);
 
-// Map controllers for REST API - do this before custom middleware
-app.MapControllers();
+// Enable static files - should come before the root MapGet to ensure static content is served
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
+// Make sure index.html and other static files are properly served
+app.MapFallbackToFile("index.html");
 
 // Use a dedicated endpoint for Nostr relay info to ensure proper routing and CORS handling
 app.MapGet("/", (HttpContext context, IOptions<RelayOptions> options) =>
@@ -118,13 +122,6 @@ app.Use(async (context, next) =>
         await next();
     }
 });
-
-// Enable static files - should come after other middleware
-app.UseDefaultFiles();
-app.UseStaticFiles();
-
-// Make sure index.html and other static files are properly served
-app.MapFallbackToFile("index.html");
 
 var sampleTodos = new Todo[] {
     new(1, "Walk the dog"),
