@@ -5,12 +5,17 @@ using DiscoveryRelay.Options;
 using DiscoveryRelay.Controllers;
 using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Cors.Infrastructure;
+using DiscoveryRelay.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Configure options
 builder.Services.Configure<RelayOptions>(
     builder.Configuration.GetSection(RelayOptions.SectionName));
+
+// Add LMDB options and service
+builder.Services.Configure<LmdbOptions>(builder.Configuration.GetSection(LmdbOptions.ConfigSection));
+builder.Services.AddSingleton<LmdbStorageService>();
 
 // Add CORS policy with a named policy for more control - make it as permissive as possible for debugging
 builder.Services.AddCors(options =>

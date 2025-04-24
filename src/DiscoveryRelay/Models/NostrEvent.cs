@@ -39,15 +39,8 @@ public class NostrEvent
     /// <summary>
     /// Verifies that the event signature is valid
     /// </summary>
-    public bool VerifySignature()
+    public string? VerifySignature()
     {
-        try
-        {
-            return Utils.SignatureValidator.ValidateSignature(this, PubKey, Signature, Id);
-        }
-        catch
-        {
-            return false;
-        }
+        return Utils.SignatureValidator.Validate(this);
     }
 }

@@ -61,65 +61,169 @@
             background-color: #f2dede;
             color: #a94442;
         }
+        /* Tab styles */
+        .tab {
+            overflow: hidden;
+            border: 1px solid #ccc;
+            background-color: #f1f1f1;
+            border-radius: 8px 8px 0 0;
+        }
+        .tab button {
+            background-color: inherit;
+            float: left;
+            border: none;
+            outline: none;
+            cursor: pointer;
+            padding: 14px 16px;
+            transition: 0.3s;
+            color: #333;
+        }
+        .tab button:hover {
+            background-color: #ddd;
+        }
+        .tab button.active {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .tabcontent {
+            display: none;
+            padding: 6px 12px;
+            border-top: none;
+        }
+        .relay-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .relay-item button {
+            margin-left: 10px;
+        }
+        .relay-status {
+            margin-left: 10px;
+            font-size: 0.9em;
+        }
+        #syncProgress {
+            height: 20px;
+            margin-top: 10px;
+            margin-bottom: 10px;
+        }
     </style>
 </head>
 <body>
     <h1>Discovery Relay WebSocket Test</h1>
     
-    <div class="container">
-        <div class="card">
-            <h2>WebSocket Connection</h2>
-            <div id="connectionStatus" class="status disconnected">Disconnected</div>
-            <button id="connectBtn">Connect</button>
-            <button id="disconnectBtn" disabled>Disconnect</button>
-        </div>
-        
-        <div class="card">
-            <h2>Send Message</h2>
-            <textarea id="messageInput" rows="3" placeholder="Type your message here..."></textarea>
-            <button id="sendBtn" disabled>Send Message</button>
-        </div>
-        
-        <div class="card">
-            <h2>Nostr Protocol Test</h2>
-            <div>
-                <h3>Subscribe</h3>
-                <input id="subscriptionId" type="text" placeholder="Subscription ID (e.g. sub:1)" value="sub:1">
-                <input id="authorId" type="text" placeholder="Author ID (hex)" value="17e2889fba01021d048a13fd0ba108ad31c38326295460c21e69c43fa8fbe515">
-                <input id="kindId" type="number" placeholder="Kind" value="10002">
-                <button id="subscribeBtn" disabled>Send REQ</button>
+    <div class="tab">
+        <button class="tablinks active" onclick="openTab(event, 'testing')">Testing</button>
+        <button class="tablinks" onclick="openTab(event, 'sync')">Sync</button>
+    </div>
+    
+    <div id="testing" class="tabcontent" style="display: block;">
+        <div class="container">
+            <div class="card">
+                <h2>WebSocket Connection</h2>
+                <div id="connectionStatus" class="status disconnected">Disconnected</div>
+                <button id="connectBtn">Connect</button>
+                <button id="disconnectBtn" disabled>Disconnect</button>
             </div>
-            <div style="margin-top: 10px;">
-                <h3>Unsubscribe</h3>
-                <input id="closeSubscriptionId" type="text" placeholder="Subscription ID (e.g. sub:1)" value="sub:1">
-                <button id="unsubscribeBtn" disabled>Send CLOSE</button>
+            
+            <div class="card">
+                <h2>Send Message</h2>
+                <textarea id="messageInput" rows="3" placeholder="Type your message here..."></textarea>
+                <button id="sendBtn" disabled>Send Message</button>
             </div>
-            <div style="margin-top: 15px;">
-                <h3>Send Event</h3>
-                <input id="eventPubkey" type="text" placeholder="Public Key (hex)" value="17e2889fba01021d048a13fd0ba108ad31c38326295460c21e69c43fa8fbe515">
-                <input id="eventKind" type="number" placeholder="Kind" value="1">
-                <input id="eventId" type="text" placeholder="Event ID (hex, auto-generated if empty)" value="">
-                <textarea id="eventContent" rows="2" placeholder="Content"></textarea>
-                <input id="eventSig" type="text" placeholder="Signature (hex, for testing only)" value="">
-                <button id="sendEventBtn" disabled>Send EVENT</button>
+            
+            <div class="card">
+                <h2>Nostr Protocol Test</h2>
+                <div>
+                    <h3>Subscribe</h3>
+                    <input id="subscriptionId" type="text" placeholder="Subscription ID (e.g. sub:1)" value="sub:1">
+                    <input id="authorId" type="text" placeholder="Author ID (hex)" value="17e2889fba01021d048a13fd0ba108ad31c38326295460c21e69c43fa8fbe515">
+                    <input id="kindId" type="number" placeholder="Kind" value="10002">
+                    <button id="subscribeBtn" disabled>Send REQ</button>
+                </div>
+                <div style="margin-top: 10px;">
+                    <h3>Unsubscribe</h3>
+                    <input id="closeSubscriptionId" type="text" placeholder="Subscription ID (e.g. sub:1)" value="sub:1">
+                    <button id="unsubscribeBtn" disabled>Send CLOSE</button>
+                </div>
+                <div style="margin-top: 15px;">
+                    <h3>Send Event</h3>
+                    <input id="eventPubkey" type="text" placeholder="Public Key (hex)" value="17e2889fba01021d048a13fd0ba108ad31c38326295460c21e69c43fa8fbe515">
+                    <input id="eventKind" type="number" placeholder="Kind" value="1">
+                    <input id="eventId" type="text" placeholder="Event ID (hex, auto-generated if empty)" value="">
+                    <textarea id="eventContent" rows="2" placeholder="Content"></textarea>
+                    <input id="eventSig" type="text" placeholder="Signature (hex, for testing only)" value="">
+                    <button id="sendEventBtn" disabled>Send EVENT</button>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>Message Log</h2>
+                <div id="log"></div>
+                <button id="clearLogBtn">Clear Log</button>
+            </div>
+            
+            <div class="card">
+                <h2>REST API Test</h2>
+                <input id="broadcastInput" type="text" placeholder="Message to broadcast">
+                <button id="broadcastBtn">Broadcast via REST API</button>
             </div>
         </div>
-        
-        <div class="card">
-            <h2>Message Log</h2>
-            <div id="log"></div>
-            <button id="clearLogBtn">Clear Log</button>
-        </div>
-        
-        <div class="card">
-            <h2>REST API Test</h2>
-            <input id="broadcastInput" type="text" placeholder="Message to broadcast">
-            <button id="broadcastBtn">Broadcast via REST API</button>
+    </div>
+    
+    <div id="sync" class="tabcontent">
+        <div class="container">
+            <div class="card">
+                <h2>Relay Synchronization</h2>
+                <p>Add relay URLs to fetch data from and sync to local relay.</p>
+                
+                <div id="relayList">
+                    <div class="relay-item">
+                        <input type="text" class="relay-url" placeholder="wss://relay.example.com" value="wss://relay.damus.io">
+                        <button class="remove-relay">Remove</button>
+                        <span class="relay-status"></span>
+                    </div>
+                </div>
+                
+                <button id="addRelayBtn">Add Relay</button>
+                <button id="testRelaysBtn">Test Connections</button>
+                
+                <h3>Sync Options</h3>
+                <div>
+                    <label><input type="checkbox" id="syncKind10002" checked> Sync Kind 10002 (Relay List Metadata)</label>
+                </div>
+                <div>
+                    <label><input type="checkbox" id="syncKind3" checked> Sync Kind 3 (Contacts)</label>
+                </div>
+                <div>
+                    <label>Limit: <input type="number" id="syncLimit" value="50" min="1" max="500"></label>
+                </div>
+                
+                <progress id="syncProgress" value="0" max="100" style="display: none;"></progress>
+                <div id="syncStats"></div>
+                
+                <button id="startSyncBtn">Start Sync</button>
+                <button id="stopSyncBtn" disabled>Stop Sync</button>
+            </div>
+            
+            <div class="card">
+                <h2>Sync Log</h2>
+                <div id="syncLog" class="log" style="height: 200px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background-color: #f5f5f5; font-family: monospace;"></div>
+                <button id="clearSyncLogBtn">Clear Log</button>
+            </div>
         </div>
     </div>
 
     <script>
         let socket;
+        let externalRelays = {};
+        let isSyncing = false;
+        let syncStats = {
+            totalEvents: 0,
+            processedEvents: 0,
+            successfulEvents: 0,
+            failedEvents: 0
+        };
         
         document.getElementById('connectBtn').addEventListener('click', connectWebSocket);
         document.getElementById('disconnectBtn').addEventListener('click', disconnectWebSocket);
@@ -129,6 +233,370 @@
         document.getElementById('subscribeBtn').addEventListener('click', sendSubscription);
         document.getElementById('unsubscribeBtn').addEventListener('click', sendUnsubscription);
         document.getElementById('sendEventBtn').addEventListener('click', sendEvent);
+        
+        // Sync tab event listeners
+        document.getElementById('addRelayBtn').addEventListener('click', addRelayInput);
+        document.getElementById('testRelaysBtn').addEventListener('click', testRelayConnections);
+        document.getElementById('startSyncBtn').addEventListener('click', startSync);
+        document.getElementById('stopSyncBtn').addEventListener('click', stopSync);
+        document.getElementById('clearSyncLogBtn').addEventListener('click', clearSyncLog);
+        
+        // Set up initial relay remove buttons
+        setupRelayRemoveButtons();
+        
+        function openTab(evt, tabName) {
+            const tabcontent = document.getElementsByClassName("tabcontent");
+            for (let i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].style.display = "none";
+            }
+            
+            const tablinks = document.getElementsByClassName("tablinks");
+            for (let i = 0; i < tablinks.length; i++) {
+                tablinks[i].className = tablinks[i].className.replace(" active", "");
+            }
+            
+            document.getElementById(tabName).style.display = "block";
+            evt.currentTarget.className += " active";
+        }
+        
+        function setupRelayRemoveButtons() {
+            const removeButtons = document.querySelectorAll('.remove-relay');
+            removeButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    const relayItem = this.parentNode;
+                    const relayUrl = relayItem.querySelector('.relay-url').value;
+                    
+                    // Close connection if exists
+                    if (externalRelays[relayUrl]) {
+                        try {
+                            externalRelays[relayUrl].close();
+                            delete externalRelays[relayUrl];
+                        } catch (e) {
+                            console.error("Error closing relay connection:", e);
+                        }
+                    }
+                    
+                    // Remove the relay input
+                    relayItem.remove();
+                });
+            });
+        }
+        
+        function addRelayInput() {
+            const relayList = document.getElementById('relayList');
+            const newRelayItem = document.createElement('div');
+            newRelayItem.className = 'relay-item';
+            newRelayItem.innerHTML = `
+                <input type="text" class="relay-url" placeholder="wss://relay.example.com">
+                <button class="remove-relay">Remove</button>
+                <span class="relay-status"></span>
+            `;
+            relayList.appendChild(newRelayItem);
+            
+            // Add event listener to the new remove button
+            newRelayItem.querySelector('.remove-relay').addEventListener('click', function() {
+                const relayUrl = newRelayItem.querySelector('.relay-url').value;
+                
+                // Close connection if exists
+                if (externalRelays[relayUrl]) {
+                    try {
+                        externalRelays[relayUrl].close();
+                        delete externalRelays[relayUrl];
+                    } catch (e) {
+                        console.error("Error closing relay connection:", e);
+                    }
+                }
+                
+                newRelayItem.remove();
+            });
+        }
+        
+        function testRelayConnections() {
+            syncLog('Testing relay connections...');
+            const relayItems = document.querySelectorAll('.relay-item');
+            
+            relayItems.forEach(item => {
+                const urlInput = item.querySelector('.relay-url');
+                const statusSpan = item.querySelector('.relay-status');
+                const relayUrl = urlInput.value.trim();
+                
+                if (!relayUrl) {
+                    statusSpan.textContent = '❌ No URL provided';
+                    return;
+                }
+                
+                statusSpan.textContent = 'Connecting...';
+                
+                try {
+                    // Close existing connection if any
+                    if (externalRelays[relayUrl]) {
+                        externalRelays[relayUrl].close();
+                    }
+                    
+                    const ws = new WebSocket(relayUrl);
+                    
+                    ws.onopen = () => {
+                        statusSpan.textContent = '✅ Connected';
+                        syncLog(`Connected to ${relayUrl}`);
+                        
+                        // Test if it's a Nostr relay by sending a simple REQ
+                        const testReq = JSON.stringify(["REQ", "test", { "limit": 1 }]);
+                        ws.send(testReq);
+                        
+                        // Close test connection after a short delay
+                        setTimeout(() => {
+                            try {
+                                ws.close();
+                            } catch (e) {
+                                console.error("Error closing test connection:", e);
+                            }
+                        }, 2000);
+                    };
+                    
+                    ws.onmessage = (event) => {
+                        syncLog(`Received from ${relayUrl}: ${event.data}`);
+                    };
+                    
+                    ws.onerror = (error) => {
+                        statusSpan.textContent = '❌ Error';
+                        syncLog(`Error connecting to ${relayUrl}: ${error.message || 'Unknown error'}`);
+                    };
+                    
+                    ws.onclose = () => {
+                        if (statusSpan.textContent !== '❌ Error') {
+                            statusSpan.textContent = '⚠️ Closed';
+                        }
+                    };
+                } catch (error) {
+                    statusSpan.textContent = '❌ Invalid URL';
+                    syncLog(`Invalid relay URL ${relayUrl}: ${error.message}`);
+                }
+            });
+        }
+        
+        function connectToRelays() {
+            const relayItems = document.querySelectorAll('.relay-item');
+            const connectedRelays = [];
+            
+            relayItems.forEach(item => {
+                const urlInput = item.querySelector('.relay-url');
+                const statusSpan = item.querySelector('.relay-status');
+                const relayUrl = urlInput.value.trim();
+                
+                if (!relayUrl) return;
+                
+                try {
+                    // Close existing connection if any
+                    if (externalRelays[relayUrl]) {
+                        externalRelays[relayUrl].close();
+                    }
+                    
+                    statusSpan.textContent = 'Connecting...';
+                    
+                    const ws = new WebSocket(relayUrl);
+                    externalRelays[relayUrl] = ws;
+                    
+                    ws.onopen = () => {
+                        statusSpan.textContent = '✅ Connected';
+                        syncLog(`Connected to ${relayUrl}`);
+                        connectedRelays.push(relayUrl);
+                    };
+                    
+                    ws.onmessage = (event) => {
+                        handleExternalRelayMessage(relayUrl, event.data);
+                    };
+                    
+                    ws.onerror = (error) => {
+                        statusSpan.textContent = '❌ Error';
+                        syncLog(`Error with ${relayUrl}: ${error.message || 'Unknown error'}`);
+                    };
+                    
+                    ws.onclose = () => {
+                        if (statusSpan.textContent !== '❌ Error') {
+                            statusSpan.textContent = '⚠️ Closed';
+                        }
+                        syncLog(`Disconnected from ${relayUrl}`);
+                    };
+                } catch (error) {
+                    statusSpan.textContent = '❌ Invalid URL';
+                    syncLog(`Invalid relay URL ${relayUrl}: ${error.message}`);
+                }
+            });
+            
+            return new Promise((resolve) => {
+                // Wait a bit for connections to establish
+                setTimeout(() => {
+                    resolve(Object.keys(externalRelays).filter(url => externalRelays[url].readyState === WebSocket.OPEN));
+                }, 2000);
+            });
+        }
+        
+        function startSync() {
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
+                syncLog('❌ Please connect to local relay first');
+                return;
+            }
+            
+            isSyncing = true;
+            document.getElementById('startSyncBtn').disabled = true;
+            document.getElementById('stopSyncBtn').disabled = false;
+            document.getElementById('syncProgress').style.display = 'block';
+            
+            // Reset sync stats
+            syncStats = {
+                totalEvents: 0,
+                processedEvents: 0,
+                successfulEvents: 0,
+                failedEvents: 0
+            };
+            updateSyncStats();
+            
+            syncLog('Starting synchronization...');
+            
+            connectToRelays().then(connectedRelays => {
+                if (connectedRelays.length === 0) {
+                    syncLog('❌ No relays connected. Sync aborted.');
+                    stopSync();
+                    return;
+                }
+                
+                syncLog(`Connected to ${connectedRelays.length} relays`);
+                
+                const syncKind10002 = document.getElementById('syncKind10002').checked;
+                const syncKind3 = document.getElementById('syncKind3').checked;
+                const limit = parseInt(document.getElementById('syncLimit').value) || 50;
+                
+                // Create filters
+                const filters = [];
+                
+                if (syncKind10002) {
+                    filters.push({ kinds: [10002], limit });
+                }
+                
+                if (syncKind3) {
+                    filters.push({ kinds: [3], limit });
+                }
+                
+                if (filters.length === 0) {
+                    syncLog('❌ No kind selected for syncing. Sync aborted.');
+                    stopSync();
+                    return;
+                }
+                
+                // Send REQ to each relay
+                connectedRelays.forEach(relayUrl => {
+                    if (!isSyncing) return;
+                    
+                    const relay = externalRelays[relayUrl];
+                    if (relay && relay.readyState === WebSocket.OPEN) {
+                        const subscriptionId = `sync:${Date.now()}:${Math.floor(Math.random() * 1000)}`;
+                        
+                        const reqMessage = ["REQ", subscriptionId, ...filters];
+                        relay.send(JSON.stringify(reqMessage));
+                        
+                        syncLog(`Requested data from ${relayUrl}: ${JSON.stringify(filters)}`);
+                        
+                        // Set a timeout to close the subscription
+                        setTimeout(() => {
+                            if (relay.readyState === WebSocket.OPEN && isSyncing) {
+                                relay.send(JSON.stringify(["CLOSE", subscriptionId]));
+                                syncLog(`Closed subscription ${subscriptionId} to ${relayUrl}`);
+                            }
+                        }, 30000); // 30 seconds timeout
+                    }
+                });
+            });
+        }
+        
+        function stopSync() {
+            isSyncing = false;
+            document.getElementById('startSyncBtn').disabled = false;
+            document.getElementById('stopSyncBtn').disabled = true;
+            document.getElementById('syncProgress').style.display = 'none';
+            
+            // Close all external relay connections
+            Object.keys(externalRelays).forEach(url => {
+                try {
+                    if (externalRelays[url].readyState === WebSocket.OPEN) {
+                        externalRelays[url].close();
+                    }
+                    delete externalRelays[url];
+                } catch (e) {
+                    console.error(`Error closing connection to ${url}:`, e);
+                }
+            });
+            
+            // Update UI
+            const relayItems = document.querySelectorAll('.relay-item');
+            relayItems.forEach(item => {
+                const statusSpan = item.querySelector('.relay-status');
+                statusSpan.textContent = '';
+            });
+            
+            syncLog('Synchronization stopped');
+        }
+        
+        function handleExternalRelayMessage(relayUrl, data) {
+            if (!isSyncing) return;
+            
+            try {
+                const message = JSON.parse(data);
+                
+                if (message[0] === 'EVENT' && message.length >= 3) {
+                    const event = message[2];
+                    
+                    // Increment total events counter
+                    syncStats.totalEvents++;
+                    
+                    syncLog(`Received event kind ${event.kind} from ${relayUrl}`);
+                    
+                    // Forward event to local relay
+                    if (socket && socket.readyState === WebSocket.OPEN) {
+                        socket.send(JSON.stringify(["EVENT", event]));
+                        syncStats.processedEvents++;
+                        syncStats.successfulEvents++;
+                        syncLog(`Forwarded event to local relay: ${event.id.substring(0, 8)}...`);
+                    } else {
+                        syncStats.failedEvents++;
+                        syncLog('❌ Local relay not connected, cannot forward event');
+                    }
+                    
+                    updateSyncStats();
+                } else if (message[0] === 'EOSE') {
+                    syncLog(`End of stored events from ${relayUrl}`);
+                } else if (message[0] === 'NOTICE') {
+                    syncLog(`Notice from ${relayUrl}: ${message[1]}`);
+                }
+            } catch (error) {
+                syncLog(`Error processing message from ${relayUrl}: ${error.message}`);
+                console.error("Failed to parse message:", data, error);
+            }
+        }
+        
+        function updateSyncStats() {
+            const progress = syncStats.totalEvents > 0 ? 
+                (syncStats.processedEvents / syncStats.totalEvents) * 100 : 0;
+                
+            document.getElementById('syncProgress').value = progress;
+            
+            document.getElementById('syncStats').innerHTML = `
+                Events found: ${syncStats.totalEvents}<br>
+                Processed: ${syncStats.processedEvents}<br>
+                Successful: ${syncStats.successfulEvents}<br>
+                Failed: ${syncStats.failedEvents}
+            `;
+        }
+        
+        function syncLog(message) {
+            const logElem = document.getElementById('syncLog');
+            const timestamp = new Date().toISOString().substring(11, 19);
+            logElem.innerHTML += `<div>[${timestamp}] ${message}</div>`;
+            logElem.scrollTop = logElem.scrollHeight;
+        }
+        
+        function clearSyncLog() {
+            document.getElementById('syncLog').innerHTML = '';
+        }
         
         function connectWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';

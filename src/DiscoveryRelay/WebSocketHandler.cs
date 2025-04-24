@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using DiscoveryRelay.Models;
 using DiscoveryRelay.Options;
+using DiscoveryRelay.Services;
 using Microsoft.Extensions.Options;
 
 namespace DiscoveryRelay;
@@ -18,11 +19,16 @@ public class WebSocketHandler : IDisposable
     private readonly Timer _statsTimer;
     private readonly Timer _idleConnectionTimer;
     private readonly RelayOptions _options;
+    private readonly LmdbStorageService _storageService;
 
-    public WebSocketHandler(ILogger<WebSocketHandler> logger, IOptions<RelayOptions> options)
+    public WebSocketHandler(
+        ILogger<WebSocketHandler> logger, 
+        IOptions<RelayOptions> options,
+        LmdbStorageService storageService)
     {
         _logger = logger;
         _options = options.Value;
+        _storageService = storageService;
         
         // Configure JSON options for source-generated serialization
         _jsonOptions = new JsonSerializerOptions
@@ -262,8 +268,17 @@ public class WebSocketHandler : IDisposable
                     }
                     */
                     
-                    // Process the event (relay to subscribers, store, etc.)
-                    // For now, just echo back an OK message
+                    // Store the event in LMDB
+                    bool stored = _storageService.StoreEvent(nostrEvent);
+                    
+                    if (!stored)
+                    {
+                        _logger.LogWarning("Failed to store event {Id} in LMDB", nostrEvent.Id);
+                        responseMessage = CreateNostrErrorResponse("Failed to store event");
+                        return true;
+                    }
+                    
+                    _logger.LogInformation("Event {Id} successfully stored in LMDB", nostrEvent.Id);
                     
                     // Create an OK message as per NIP-20
                     responseMessage = $"[\"OK\",\"{nostrEvent.Id}\",true,\"\"]";

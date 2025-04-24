@@ -5,7 +5,7 @@ using DiscoveryRelay.Models;
 
 namespace DiscoveryRelay.Utils;
 
-public static class SignatureValidator : IEventValidator
+public static class SignatureValidator // : IEventValidator
 {
     /// <summary>
     /// Validates a Nostr event signature using SecpSchnorr.
@@ -15,34 +15,26 @@ public static class SignatureValidator : IEventValidator
     /// <param name="signatureHex">The signature in hexadecimal format.</param>
     /// <param name="eventHashHex">The event hash in hexadecimal format.</param>
     /// <returns>True if the signature is valid, otherwise false.</returns>
-    public static bool ValidateSignature(NostrEvent @event, string pubKeyHex, string signatureHex, string eventHashHex)
+    public static string? Validate(NostrEvent e)
     {
         try
         {
-            // Convert hex strings to byte arrays
-            var pubKeyBytes = Convert.FromHexString(pubKeyHex);
-            var signatureBytes = Convert.FromHexString(signatureHex);
-            var eventHashBytes = Convert.FromHexString(eventHashHex);
+            var pubKeyBytes = Convert.FromHexString(e.PubKey);
+            var signatureBytes = Convert.FromHexString(e.Signature);
+            var idBytes = Convert.FromHexString(e.Id);
 
-            // Parse the public key
-            if (!Context.Instance.TryCreatePubKey(pubKeyBytes, out var pubKey))
+            if (!SecpSchnorrSignature.TryCreate(signatureBytes, out var signature))
             {
-                return false;
+                return Messages.InvalidSignature;
             }
 
-            // Parse the signature
-            if (!SchnorrSignature.TryCreate(signatureBytes, out var signature))
-            {
-                return false;
-            }
-
-            // Verify the signature
-            return pubKey.SigVerifyBIP340(signature, eventHashBytes);
+            return Context.Instance.CreateXOnlyPubKey(pubKeyBytes).SigVerifyBIP340(signature, idBytes)
+                ? null
+                : Messages.InvalidSignature;
         }
         catch
         {
-            // Return false if any exception occurs
-            return false;
+            return Messages.InvalidSignature;
         }
     }
 }
