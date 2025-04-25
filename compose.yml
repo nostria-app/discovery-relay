@@ -1,0 +1,19 @@
+name: discovery-relay
+
+services:
+  app:
+    image: "ghcr.io/sondreb/discovery-relay:latest"
+    restart: always
+    ports:
+      - "6565:6565"
+    environment:
+      Relay__Name: "Nostria Discovery Relay"
+      Relay__Contact: "17e2889fba01021d048a13fd0ba108ad31c38326295460c21e69c43fa8fbe515"
+      Relay__PrivacyPolicy: "https://discovery.nostria.com/privacy-policy"
+      Relay__PostingPolicy: "https://discovery.nostria.com/posting-policy"
+      Lmdb__DatabasePath: 'data'
+      Lmdb__SizeInGb: 1
+      Lmdb__MaxReaders: 4096
+      ASPNETCORE_ENVIRONMENT: Production
+    volumes:
+      - /data/:/app/data
