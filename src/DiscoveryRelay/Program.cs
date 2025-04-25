@@ -74,12 +74,12 @@ var webSocketOptions = new WebSocketOptions
 
 app.UseWebSockets(webSocketOptions);
 
-// Enable static files - should come before the root MapGet to ensure static content is served
+// Enable static files - should come before route handling but after basic middleware
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
-// Make sure index.html and other static files are properly served
-app.MapFallbackToFile("index.html");
+// Register controllers and API endpoints
+app.MapControllers();
 
 // Use a dedicated endpoint for Nostr relay info to ensure proper routing and CORS handling
 app.MapGet("/", async (HttpContext context, IOptions<RelayOptions> options) =>
@@ -156,6 +156,21 @@ todosApi.MapGet("/{id}", (int id) =>
     sampleTodos.FirstOrDefault(a => a.Id == id) is { } todo
         ? Results.Ok(todo)
         : Results.NotFound());
+
+// Make sure the fallback comes AFTER all API routes are registered
+// and exclude /api/* paths from the fallback
+app.MapFallbackToFile("{**path}", "index.html", new StaticFileOptions())
+   .AddEndpointFilter(async (context, next) =>
+   {
+       // Don't apply the fallback to API routes
+       var path = context.HttpContext.Request.Path.Value ?? string.Empty;
+       if (path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase))
+       {
+           return Results.NotFound();
+       }
+
+       return await next(context);
+   });
 
 app.Run();
 
