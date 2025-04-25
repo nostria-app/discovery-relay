@@ -13,6 +13,8 @@ public class LmdbStorageService : IDisposable
     private LightningEnvironment _env;
     private bool _disposed = false;
     private readonly string _dbPath;
+    private Int64 _mapSize = 1L * 1024L * 1024L * 1024L; // 1 GB
+    private int _maxReaders = 4096; // Default max readers
 
     private const string EventsDbName = "events";
 
@@ -27,6 +29,16 @@ public class LmdbStorageService : IDisposable
             WriteIndented = false,
             TypeInfoResolver = NostrSerializationContext.Default
         };
+
+        if (options.Value.SizeInGb > 0)
+        {
+            _mapSize = options.Value.SizeInGb * _mapSize;
+        }
+
+        if (options.Value.MaxReaders > 0)
+        {
+            _maxReaders = options.Value.MaxReaders;
+        }
 
         Initialize();
     }
@@ -45,9 +57,9 @@ public class LmdbStorageService : IDisposable
             // Initialize LMDB environment
             _env = new LightningEnvironment(_dbPath)
             {
-                MapSize = 1024L * 1024L * 100L, // 100 MB
-                MaxDatabases = 2,
-                MaxReaders = 4096,
+                MapSize = _mapSize,
+                MaxDatabases = 1,
+                MaxReaders = _maxReaders,
             };
 
             _env.Open(EnvironmentOpenFlags.NoSync);

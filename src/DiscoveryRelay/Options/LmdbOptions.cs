@@ -8,4 +8,8 @@ public class LmdbOptions
     /// The path to the LMDB database directory
     /// </summary>
     public string DatabasePath { get; set; } = Path.Combine(AppContext.BaseDirectory, "data");
+
+    public long SizeInGb { get; set; }
+
+    public int MaxReaders { get; set; }
 }

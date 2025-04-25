@@ -1,0 +1,20 @@
+{
+  "name": "discovery-relay-command",
+  "version": "1.0.0",
+  "description": "CLI tool to interact with Discovery Relay LMDB database",
+  "main": "index.js",
+  "bin": {
+    "discovery-relay": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^13.1.0",
+    "node-lmdb": "^0.10.1",
+    "chalk": "^5.4.1",
+    "table": "^6.9.0"
+  }
+}
