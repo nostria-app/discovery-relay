@@ -7,10 +7,10 @@ services:
     ports:
       - "6565:6565"
     environment:
-      Relay__Name: "Nostria Discovery Relay"
-      Relay__Contact: "17e2889fba01021d048a13fd0ba108ad31c38326295460c21e69c43fa8fbe515"
-      Relay__PrivacyPolicy: "https://discovery.nostria.com/privacy-policy"
-      Relay__PostingPolicy: "https://discovery.nostria.com/posting-policy"
+      Relay__Name: "Discovery Relay"
+      Relay__Contact: ""
+      Relay__PrivacyPolicy: ""
+      Relay__PostingPolicy: ""
       Lmdb__DatabasePath: 'data'
       Lmdb__SizeInGb: 1
       Lmdb__MaxReaders: 4096
