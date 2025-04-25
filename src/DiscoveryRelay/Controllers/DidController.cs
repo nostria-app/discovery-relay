@@ -89,34 +89,7 @@ public class DidController : ControllerBase
         var serviceList = new List<Service>();
 
         // For kind 3 (contacts), extract relays from the content
-        if (nostrEvent.Kind == 3)
-        {
-            try
-            {
-                // In kind 3, relays are in the content as JSON
-                var relayDict = JsonSerializer.Deserialize<Dictionary<string, object>>(nostrEvent.Content);
-                if (relayDict != null)
-                {
-                    int relayIndex = 1;
-                    foreach (var relay in relayDict.Keys)
-                    {
-                        serviceList.Add(new Service
-                        {
-                            Id = $"{didDocument.Id}#relay{relayIndex}",
-                            Type = "Relay",
-                            ServiceEndpoint = relay
-                        });
-                        relayIndex++;
-                    }
-                }
-            }
-            catch (JsonException ex)
-            {
-                _logger.LogWarning(ex, "Failed to parse relay list from kind 3 event content");
-            }
-        }
-        // For kind 10002 (relay list), parse the relays from the "r" tags
-        else if (nostrEvent.Kind == 10002)
+        if (nostrEvent.Kind == 10002)
         {
             // In kind 10002, relays are in the tags in the format ["r", <relay-url>]
             int relayIndex = 1;
@@ -132,6 +105,36 @@ public class DidController : ControllerBase
                     });
                     relayIndex++;
                 }
+            }
+        }
+        // For kind 10002 (relay list), parse the relays from the "r" tags
+        else if (nostrEvent.Kind == 3)
+        {
+            try
+            {
+                if (nostrEvent.Content != "")
+                {
+                    // In kind 3, relays are in the content as JSON
+                    var relayDict = JsonSerializer.Deserialize<Dictionary<string, object>>(nostrEvent.Content);
+                    if (relayDict != null)
+                    {
+                        int relayIndex = 1;
+                        foreach (var relay in relayDict.Keys)
+                        {
+                            serviceList.Add(new Service
+                            {
+                                Id = $"{didDocument.Id}#relay{relayIndex}",
+                                Type = "Relay",
+                                ServiceEndpoint = relay
+                            });
+                            relayIndex++;
+                        }
+                    }
+                }
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogWarning(ex, "Failed to parse relay list from kind 3 event content");
             }
         }
 
