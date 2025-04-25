@@ -13,8 +13,8 @@ public class LmdbStorageService : IDisposable
     private LightningEnvironment _env;
     private bool _disposed = false;
     private readonly string _dbPath;
-    private long _mapSize = 1L * 1024L * 1024L * 1024L; // 1 GB
-    private int _maxReaders = 4096; // Default max readers
+    private long _mapSize = 1024L * 1024L;
+    private int _maxReaders = 4096;
     private const string EventsDbName = "events";
 
     // Write statistics tracking
@@ -36,9 +36,10 @@ public class LmdbStorageService : IDisposable
             TypeInfoResolver = NostrSerializationContext.Default
         };
 
-        if (options.Value.SizeInGb > 0)
+        if (options.Value.SizeInMb > 0)
         {
-            _mapSize = options.Value.SizeInGb * _mapSize;
+            // _mapSize = 10L * 1024L * 1024L * 1024L;
+            _mapSize = options.Value.SizeInMb * _mapSize;
         }
 
         if (options.Value.MaxReaders > 0)
@@ -90,7 +91,7 @@ public class LmdbStorageService : IDisposable
             // Initialize LMDB environment
             _env = new LightningEnvironment(_dbPath)
             {
-                MapSize = _mapSize, // Use the configured map size instead of 10MB
+                MapSize = _mapSize,
                 MaxDatabases = 1,
                 MaxReaders = _maxReaders,
             };
@@ -104,8 +105,8 @@ public class LmdbStorageService : IDisposable
                 tx.Commit();
             }
 
-            _logger.LogInformation("LMDB environment initialized at {Path} with {MapSize}GB and stats interval of {StatsInterval}s",
-                _dbPath, _mapSize / (1024L * 1024L * 1024L), _statsIntervalSeconds);
+            _logger.LogInformation("LMDB environment initialized at {Path} with {MapSize}MB and stats interval of {StatsInterval}s",
+                _dbPath, _mapSize / (1024L * 1024L), _statsIntervalSeconds);
         }
         catch (Exception ex)
         {

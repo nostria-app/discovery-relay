@@ -10,9 +10,9 @@ public class LmdbOptions
     public string DatabasePath { get; set; } = Path.Combine(AppContext.BaseDirectory, "data");
 
     /// <summary>
-    /// Size of the database in gigabytes
+    /// Size of the database in megabytes
     /// </summary>
-    public long SizeInGb { get; set; } = 1;
+    public long SizeInMb { get; set; } = 1024L; // Default to 1024MB (1GB)
 
     /// <summary>
     /// Maximum number of readers

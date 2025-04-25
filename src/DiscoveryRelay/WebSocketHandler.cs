@@ -551,7 +551,7 @@ public class WebSocketHandler : IDisposable
 
                     if (!stored)
                     {
-                        _logger.LogWarning("Failed to store event {Id} in LMDB - storage service returned false", nostrEvent.Id);
+                        _logger.LogDebug("Failed to store event {Id} in LMDB - storage service returned false", nostrEvent.Id);
                         responseMessage = $"[\"OK\",\"{nostrEvent.Id}\",false,\"error: failed to store event\"]";
                         return true;
                     }
