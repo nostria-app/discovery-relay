@@ -3,13 +3,24 @@ namespace DiscoveryRelay.Options;
 public class LmdbOptions
 {
     public const string ConfigSection = "Lmdb";
-    
+
     /// <summary>
     /// The path to the LMDB database directory
     /// </summary>
     public string DatabasePath { get; set; } = Path.Combine(AppContext.BaseDirectory, "data");
 
-    public long SizeInGb { get; set; }
+    /// <summary>
+    /// Size of the database in gigabytes
+    /// </summary>
+    public long SizeInGb { get; set; } = 1;
 
-    public int MaxReaders { get; set; }
+    /// <summary>
+    /// Maximum number of readers
+    /// </summary>
+    public int MaxReaders { get; set; } = 4096;
+
+    /// <summary>
+    /// Interval in seconds for logging write statistics (minimum 10 seconds)
+    /// </summary>
+    public int StatsIntervalSeconds { get; set; } = 10;
 }

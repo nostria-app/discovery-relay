@@ -17,6 +17,13 @@ public class LmdbStorageService : IDisposable
     private int _maxReaders = 4096; // Default max readers
     private const string EventsDbName = "events";
 
+    // Write statistics tracking
+    private int _writeCount = 0;
+    private int _lastWriteCount = 0;
+    private readonly object _statsLock = new object();
+    private Timer _statsTimer;
+    private readonly int _statsIntervalSeconds;
+
     public LmdbStorageService(ILogger<LmdbStorageService> logger, IOptions<LmdbOptions> options)
     {
         _logger = logger;
@@ -39,7 +46,34 @@ public class LmdbStorageService : IDisposable
             _maxReaders = options.Value.MaxReaders;
         }
 
+        // Set statistics logging interval (default to 10 seconds if not specified)
+        _statsIntervalSeconds = Math.Max(10, options.Value.StatsIntervalSeconds);
+
         Initialize();
+
+        // Initialize statistics timer
+        _statsTimer = new Timer(LogWriteStatistics, null,
+            TimeSpan.FromSeconds(_statsIntervalSeconds),
+            TimeSpan.FromSeconds(_statsIntervalSeconds));
+    }
+
+    private void LogWriteStatistics(object? state)
+    {
+        int currentCount;
+        int previousCount;
+
+        lock (_statsLock)
+        {
+            currentCount = _writeCount;
+            previousCount = _lastWriteCount;
+            _lastWriteCount = currentCount;
+        }
+
+        int writesPerInterval = currentCount - previousCount;
+        double writesPerSecond = (double)writesPerInterval / _statsIntervalSeconds;
+
+        _logger.LogInformation("LMDB Write Stats: {WritesPerInterval} writes in {IntervalSeconds} seconds ({WritesPerSecond:F2} writes/sec), Total: {TotalWrites}",
+            writesPerInterval, _statsIntervalSeconds, writesPerSecond, currentCount);
     }
 
     private void Initialize()
@@ -56,7 +90,7 @@ public class LmdbStorageService : IDisposable
             // Initialize LMDB environment
             _env = new LightningEnvironment(_dbPath)
             {
-                MapSize = 10L * 1024L * 1024L, // 10MB for testing errors.
+                MapSize = _mapSize, // Use the configured map size instead of 10MB
                 MaxDatabases = 1,
                 MaxReaders = _maxReaders,
             };
@@ -70,7 +104,8 @@ public class LmdbStorageService : IDisposable
                 tx.Commit();
             }
 
-            _logger.LogInformation("LMDB environment initialized at {Path}", _dbPath);
+            _logger.LogInformation("LMDB environment initialized at {Path} with {MapSize}GB and stats interval of {StatsInterval}s",
+                _dbPath, _mapSize / (1024L * 1024L * 1024L), _statsIntervalSeconds);
         }
         catch (Exception ex)
         {
@@ -163,6 +198,12 @@ public class LmdbStorageService : IDisposable
             tx.Put(eventsDb, keyBytes, valueBytes);
 
             tx.Commit();
+
+            // Increment write counter
+            lock (_statsLock)
+            {
+                _writeCount++;
+            }
 
             _logger.LogDebug("Successfully stored event with ID {Id} for pubkey {Pubkey} and kind {Kind}, timestamp {Timestamp}",
                             nostrEvent.Id, pubkey, kind, nostrEvent.CreatedAt);
@@ -390,6 +431,7 @@ public class LmdbStorageService : IDisposable
         {
             if (disposing)
             {
+                _statsTimer?.Dispose();
                 _env?.Dispose();
             }
 
