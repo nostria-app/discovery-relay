@@ -13,9 +13,8 @@ public class LmdbStorageService : IDisposable
     private LightningEnvironment _env;
     private bool _disposed = false;
     private readonly string _dbPath;
-    private Int64 _mapSize = 1L * 1024L * 1024L * 1024L; // 1 GB
+    private long _mapSize = 1L * 1024L * 1024L * 1024L; // 1 GB
     private int _maxReaders = 4096; // Default max readers
-
     private const string EventsDbName = "events";
 
     public LmdbStorageService(ILogger<LmdbStorageService> logger, IOptions<LmdbOptions> options)

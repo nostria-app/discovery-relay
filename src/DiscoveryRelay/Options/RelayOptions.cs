@@ -64,7 +64,7 @@ public class RelayOptions
     /// </summary>
     public string? PrivacyPolicy { get; set; }
 
-        /// <summary>
+    /// <summary>
     /// Posting policy URL for the relay
     /// </summary>
     public string? PostingPolicy { get; set; }
@@ -73,4 +73,17 @@ public class RelayOptions
     /// Terms of service URL for the relay
     /// </summary>
     public string? TermsOfService { get; set; }
+
+    /// <summary>
+    /// Limitations for the relay
+    /// </summary>
+    public RelayLimitations Limitations { get; set; } = new RelayLimitations();
+}
+
+public class RelayLimitations
+{
+    /// <summary>
+    /// Maximum allowed length for WebSocket messages in bytes
+    /// </summary>
+    public int MaxMessageLength { get; set; } = 64 * 1024; // Default to 64KB if not specified
 }

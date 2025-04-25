@@ -21,11 +21,10 @@ public class WebSocketHandler : IDisposable
     private readonly RelayOptions _options;
     private readonly LmdbStorageService _storageService;
     private readonly CancellationTokenSource _shutdownTokenSource = new CancellationTokenSource();
+    private readonly int _maxMessageLength;
 
     // Add allowed event kinds
     private readonly HashSet<int> _allowedEventKinds = new() { 3, 10002 };
-
-    private const int MaxBufferSize = 16 * 1024; // Set buffer to 16KB
 
     public WebSocketHandler(
         ILogger<WebSocketHandler> logger,
@@ -35,6 +34,10 @@ public class WebSocketHandler : IDisposable
         _logger = logger;
         _options = options.Value;
         _storageService = storageService;
+
+        // Get max message length from configuration
+        _maxMessageLength = _options.Limitations?.MaxMessageLength ?? 64 * 1024; // Default to 64KB if not configured
+        _logger.LogInformation("WebSocket max message length configured to {MaxMessageLength} bytes", _maxMessageLength);
 
         // Configure JSON options for source-generated serialization
         _jsonOptions = new JsonSerializerOptions
@@ -272,11 +275,13 @@ public class WebSocketHandler : IDisposable
 
     private async Task ProcessWebSocketAsync(string socketId, WebSocket webSocket, CancellationToken cancellationToken)
     {
-        var buffer = new byte[MaxBufferSize]; // Use the larger buffer size
+        // Use the configured buffer size, with reasonable min/max bounds
+        var bufferSize = Math.Min(Math.Max(_maxMessageLength, 16 * 1024), 4 * 1024 * 1024); // Min 16KB, max 4MB
+        var buffer = new byte[Math.Min(bufferSize, 64 * 1024)]; // Use at most 64KB for individual reads
         WebSocketReceiveResult receiveResult;
 
         // Create a memory stream to handle messages that span multiple frames
-        using var messageBuffer = new MemoryStream();
+        using var messageBuffer = new MemoryStream(bufferSize);
 
         try
         {
@@ -293,6 +298,40 @@ public class WebSocketHandler : IDisposable
 
                     // Update last activity time on any message received
                     _lastActivityTime[socketId] = DateTime.UtcNow;
+
+                    // Check if adding this chunk would exceed the max message size
+                    if (messageBuffer.Length + receiveResult.Count > _maxMessageLength)
+                    {
+                        _logger.LogWarning("Message from {SocketId} exceeds maximum allowed size of {MaxSize} bytes",
+                            socketId, _maxMessageLength);
+
+                        var errorMessage = CreateNostrErrorResponse($"Message too large. Maximum allowed size is {_maxMessageLength} bytes");
+                        var errorBytes = Encoding.UTF8.GetBytes(errorMessage);
+
+                        await webSocket.SendAsync(
+                            new ArraySegment<byte>(errorBytes),
+                            WebSocketMessageType.Text,
+                            true,
+                            CancellationToken.None);
+
+                        // Reset the buffer for the next message
+                        messageBuffer.SetLength(0);
+
+                        // If this isn't the final frame, continue receiving until end of message
+                        if (!receiveResult.EndOfMessage)
+                        {
+                            do
+                            {
+                                receiveResult = await webSocket.ReceiveAsync(
+                                    new ArraySegment<byte>(buffer), cancellationToken);
+                            } while (!receiveResult.EndOfMessage && !cancellationToken.IsCancellationRequested);
+                        }
+
+                        // Get next message
+                        receiveResult = await webSocket.ReceiveAsync(
+                            new ArraySegment<byte>(buffer), cancellationToken);
+                        continue;
+                    }
 
                     // Add current frame to the message buffer
                     messageBuffer.Write(buffer, 0, receiveResult.Count);
@@ -370,6 +409,9 @@ public class WebSocketHandler : IDisposable
                     {
                         // Ignore any errors while sending error message
                     }
+
+                    // Reset the buffer for the next message
+                    messageBuffer.SetLength(0);
                 }
 
                 // Get next message, using a short timeout combined with cancellation token
@@ -404,11 +446,11 @@ public class WebSocketHandler : IDisposable
         try
         {
             // Add safeguard for message size
-            if (message.Length > MaxBufferSize)
+            if (message.Length > _maxMessageLength)
             {
                 _logger.LogWarning("Message from {SocketId} exceeds maximum size ({Size} bytes)",
                     socketId, message.Length);
-                responseMessage = CreateNostrErrorResponse("Message too large");
+                responseMessage = CreateNostrErrorResponse($"Message too large. Maximum allowed size is {_maxMessageLength} bytes");
                 return true;
             }
 
