@@ -60,9 +60,6 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 
 var app = builder.Build();
 
-// CORS must be the very first middleware in the pipeline
-app.UseCors();
-
 // Configure the HTTP request pipeline.
 app.UseHttpsRedirection();
 
@@ -76,6 +73,9 @@ app.UseWebSockets(webSocketOptions);
 
 // Add explicit routing middleware - this ensures all routes are properly evaluated
 app.UseRouting();
+
+// CORS middleware must be after UseRouting but before UseEndpoints/MapControllers
+app.UseCors();
 
 // Enable static files - should come before route handling but after basic middleware
 app.UseDefaultFiles();
