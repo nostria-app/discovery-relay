@@ -5,133 +5,62 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Discovery Relay WebSocket Test</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-
-        .container {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-        }
-
-        .card {
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            padding: 20px;
-            background-color: #f9f9f9;
-        }
-
-        button {
-            padding: 8px 16px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-
-        button:hover {
-            background-color: #45a049;
-        }
-
-        input,
-        textarea {
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            margin-bottom: 10px;
-            width: 100%;
-        }
-
-        #log {
-            height: 200px;
-            overflow-y: auto;
-            border: 1px solid #ddd;
-            padding: 10px;
-            background-color: #f5f5f5;
-            font-family: monospace;
-        }
-
-        .status {
-            padding: 8px;
-            border-radius: 4px;
-            margin-top: 10px;
-        }
-
-        .connected {
-            background-color: #dff0d8;
-            color: #3c763d;
-        }
-
-        .disconnected {
-            background-color: #f2dede;
-            color: #a94442;
-        }
-
-        /* Tab styles */
-        .tab {
-            overflow: hidden;
-            border: 1px solid #ccc;
-            background-color: #f1f1f1;
-            border-radius: 8px 8px 0 0;
-        }
-
-        .tab button {
-            background-color: inherit;
-            float: left;
-            border: none;
-            outline: none;
-            cursor: pointer;
-            padding: 14px 16px;
-            transition: 0.3s;
-            color: #333;
-        }
-
-        .tab button:hover {
-            background-color: #ddd;
-        }
-
-        .tab button.active {
-            background-color: #4CAF50;
-            color: white;
-        }
-
-        .tabcontent {
-            display: none;
-            padding: 6px 12px;
-            border-top: none;
-        }
-
-        .relay-item {
-            display: flex;
-            align-items: center;
-            margin-bottom: 10px;
-        }
-
-        .relay-item button {
-            margin-left: 10px;
-        }
-
-        .relay-status {
-            margin-left: 10px;
-            font-size: 0.9em;
-        }
-
-        #syncProgress {
-            height: 20px;
-            margin-top: 10px;
-            margin-bottom: 10px;
-        }
-    </style>
+    <link rel="stylesheet" href="styles.css">
 </head>
 
 <body>
-    <h1>Discovery Relay WebSocket Test</h1>
+    <div class="hero-section">
+        <img src="discovery-relay.jpg" alt="Discovery Relay Illustration" class="hero-image">
+        <div class="hero-content">
+            <h1>Discovery Relay WebSocket Test</h1>
+            <p>A Nostr relay specialized in discovery services and NIP-11 information.</p>
+        </div>
+    </div>
+
+    <div class="card" id="nip11-info">
+        <h2>NIP-11 Relay Information</h2>
+        <div id="nip11-loading">Loading relay information...</div>
+        <div id="nip11-data" style="display: none;">
+            <div class="info-grid">
+                <div class="info-label">Name:</div>
+                <div class="info-value" id="relay-name">-</div>
+
+                <div class="info-label">Description:</div>
+                <div class="info-value" id="relay-description">-</div>
+
+                <div class="info-label">Contact:</div>
+                <div class="info-value" id="relay-contact">-</div>
+
+                <div class="info-label">Software:</div>
+                <div class="info-value" id="relay-software">-</div>
+
+                <div class="info-label">Version:</div>
+                <div class="info-value" id="relay-version">-</div>
+
+                <div class="info-label">Supported NIPs:</div>
+                <div class="info-value">
+                    <div class="nips-list" id="relay-nips">-</div>
+                </div>
+
+                <div class="info-label">Limitations:</div>
+                <div class="info-value" id="relay-limitations">-</div>
+
+                <div class="info-label">Retention Policy:</div>
+                <div class="info-value" id="relay-retention">-</div>
+
+                <div class="info-label">Publish Policy:</div>
+                <div class="info-value" id="relay-publish">-</div>
+
+                <div class="info-label">Fees:</div>
+                <div class="info-value" id="relay-fees">-</div>
+
+                <div class="info-label">Privacy Policy:</div>
+                <div class="info-value" id="relay-privacy">-</div>
+            </div>
+        </div>
+        <div id="nip11-error" style="display: none; color: #a94442;"></div>
+        <button id="refresh-nip11-btn" style="margin-top: 15px;">Refresh Information</button>
+    </div>
 
     <div class="tab">
         <button class="tablinks active" onclick="openTab(event, 'testing')">Testing</button>
@@ -940,6 +869,144 @@
             if (url) {
                 window.open(url, '_blank');
             }
+        }
+
+        // NIP-11 Information Handling
+        document.addEventListener('DOMContentLoaded', function () {
+            fetchNip11Info();
+
+            document.getElementById('refresh-nip11-btn').addEventListener('click', fetchNip11Info);
+        });
+
+        function fetchNip11Info() {
+            const nip11Loading = document.getElementById('nip11-loading');
+            const nip11Data = document.getElementById('nip11-data');
+            const nip11Error = document.getElementById('nip11-error');
+
+            nip11Loading.style.display = 'block';
+            nip11Data.style.display = 'none';
+            nip11Error.style.display = 'none';
+
+            // Make NIP-11 request
+            fetch('/', {
+                headers: {
+                    'Accept': 'application/nostr+json'
+                }
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Display the NIP-11 data
+                    document.getElementById('relay-name').textContent = data.name || '-';
+                    document.getElementById('relay-description').textContent = data.description || '-';
+                    document.getElementById('relay-contact').textContent = data.contact || '-';
+                    document.getElementById('relay-software').textContent = data.software || '-';
+                    document.getElementById('relay-version').textContent = data.version || '-';
+
+                    // Format NIPs
+                    const nipsContainer = document.getElementById('relay-nips');
+                    if (data.supported_nips && data.supported_nips.length) {
+                        nipsContainer.innerHTML = '';
+                        data.supported_nips.forEach(nip => {
+                            const nipElement = document.createElement('span');
+                            nipElement.classList.add('nip-tag');
+                            nipElement.textContent = `NIP-${nip}`;
+                            nipsContainer.appendChild(nipElement);
+                        });
+                    } else {
+                        nipsContainer.textContent = '-';
+                    }
+
+                    // Limitations
+                    if (data.limitation) {
+                        let limitationsText = '';
+                        if (data.limitation.max_message_length) {
+                            limitationsText += `Max message: ${data.limitation.max_message_length} bytes\n`;
+                        }
+                        if (data.limitation.max_subscriptions) {
+                            limitationsText += `Max subscriptions: ${data.limitation.max_subscriptions}\n`;
+                        }
+                        if (data.limitation.max_filters) {
+                            limitationsText += `Max filters: ${data.limitation.max_filters}\n`;
+                        }
+                        if (data.limitation.max_limit) {
+                            limitationsText += `Max limit: ${data.limitation.max_limit}\n`;
+                        }
+                        if (data.limitation.max_subid_length) {
+                            limitationsText += `Max sub ID length: ${data.limitation.max_subid_length}\n`;
+                        }
+                        if (data.limitation.max_event_tags) {
+                            limitationsText += `Max event tags: ${data.limitation.max_event_tags}\n`;
+                        }
+                        if (data.limitation.max_content_length) {
+                            limitationsText += `Max content length: ${data.limitation.max_content_length}\n`;
+                        }
+                        document.getElementById('relay-limitations').innerHTML = limitationsText.replace(/\n/g, '<br>');
+                    } else {
+                        document.getElementById('relay-limitations').textContent = '-';
+                    }
+
+                    // Retention
+                    if (data.retention) {
+                        let retentionText = '';
+                        if (data.retention.posts) {
+                            retentionText += `Posts: ${data.retention.posts}\n`;
+                        }
+                        if (data.retention.events) {
+                            retentionText += `Events: ${data.retention.events}\n`;
+                        }
+                        document.getElementById('relay-retention').innerHTML = retentionText.replace(/\n/g, '<br>') || '-';
+                    } else {
+                        document.getElementById('relay-retention').textContent = '-';
+                    }
+
+                    // Other fields
+                    document.getElementById('relay-fees').textContent = formatFees(data) || '-';
+                    document.getElementById('relay-publish').textContent = formatPolicy(data.publication_policy) || '-';
+                    document.getElementById('relay-privacy').innerHTML =
+                        data.privacy_policy ? `<a href="${data.privacy_policy}" target="_blank">${data.privacy_policy}</a>` : '-';
+
+                    // Show the data section
+                    nip11Loading.style.display = 'none';
+                    nip11Data.style.display = 'block';
+                })
+                .catch(error => {
+                    nip11Loading.style.display = 'none';
+                    nip11Error.style.display = 'block';
+                    nip11Error.textContent = `Error fetching NIP-11 information: ${error.message}`;
+                    console.error('NIP-11 fetch error:', error);
+                });
+        }
+
+        function formatFees(data) {
+            if (!data.fees) return '-';
+
+            let feesText = '';
+            if (data.fees.admission && data.fees.admission.length > 0) {
+                feesText += 'Admission: ' + data.fees.admission.map(fee =>
+                    `${fee.amount} ${fee.unit}`).join(', ') + '\n';
+            }
+            if (data.fees.subscription && data.fees.subscription.length > 0) {
+                feesText += 'Subscription: ' + data.fees.subscription.map(fee =>
+                    `${fee.amount} ${fee.unit} per ${fee.period}`).join(', ') + '\n';
+            }
+            if (data.fees.publication && data.fees.publication.length > 0) {
+                feesText += 'Publication: ' + data.fees.publication.map(fee =>
+                    `${fee.amount} ${fee.unit}`).join(', ');
+            }
+
+            return feesText.replace(/\n/g, '<br>') || '-';
+        }
+
+        function formatPolicy(policy) {
+            if (!policy) return '-';
+            if (typeof policy === 'string') return policy;
+            if (typeof policy === 'object') return JSON.stringify(policy);
+            return '-';
         }
     </script>
 </body>

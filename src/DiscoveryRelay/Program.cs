@@ -77,69 +77,56 @@ app.UseRouting();
 // CORS middleware must be after UseRouting but before endpoints
 app.UseCors();
 
-// Enable static files - should come before route handling but after basic middleware
-app.UseDefaultFiles();
+// Enable static files with proper defaults
+app.UseDefaultFiles(new DefaultFilesOptions
+{
+    DefaultFileNames = new List<string> { "index.html" }
+});
 app.UseStaticFiles();
 
-// Use a dedicated endpoint for Nostr relay info to ensure proper routing and CORS handling
-app.MapGet("/", async (HttpContext context, IOptions<RelayOptions> options) =>
-{
-    // Check if the request is for a static file (e.g., index.html)
-    if (context.Request.Headers.Accept.ToString().Contains("text/html") && !context.Request.Query.ContainsKey("nostr"))
-    {
-        // Serve the static file (index.html)
-        context.Response.ContentType = "text/html";
-        await context.Response.SendFileAsync("wwwroot/index.html");
-        return;
-    }
-
-    // Only handle this endpoint for Nostr relay info requests
-    string acceptHeader = context.Request.Headers.Accept.ToString();
-    if (acceptHeader.Contains("application/nostr+json") || context.Request.Query.ContainsKey("nostr"))
-    {
-        var relayOptions = options.Value;
-
-        var relayInfo = new NostrRelayInfo
-        {
-            Name = relayOptions.Name,
-            Description = relayOptions.Description,
-            Banner = relayOptions.Banner,
-            Icon = relayOptions.Icon,
-            Pubkey = relayOptions.Pubkey,
-            Contact = relayOptions.Contact,
-            SupportedNips = relayOptions.SupportedNips,
-            Software = relayOptions.Software,
-            Version = VersionInfo.GetCurrentVersion(),
-            PrivacyPolicy = relayOptions.PrivacyPolicy,
-            PostingPolicy = relayOptions.PostingPolicy,
-            TermsOfService = relayOptions.TermsOfService
-        };
-
-        context.Response.ContentType = "application/nostr+json";
-        await context.Response.WriteAsJsonAsync(relayInfo, NostrSerializationContext.Default.NostrRelayInfo);
-        return;
-    }
-
-    // For other requests to the root, let the pipeline continue
-    context.Response.StatusCode = 404;
-})
-.RequireCors("NostrPolicy")
-.ExcludeFromDescription(); // Don't include this in Swagger docs
-
-// Handle WebSocket requests specifically 
+// Use a dedicated middleware for handling various request types at the root path
 app.Use(async (context, next) =>
 {
-    if (context.Request.Path == "/" && context.WebSockets.IsWebSocketRequest)
+    if (context.Request.Path == "/")
     {
-        var webSocket = await context.WebSockets.AcceptWebSocketAsync();
-        var handler = app.Services.GetRequiredService<WebSocketHandler>();
-        await handler.HandleWebSocketAsync(context, webSocket);
+        // Handle NIP-11 requests
+        string acceptHeader = context.Request.Headers.Accept.ToString();
+        if (acceptHeader.Contains("application/nostr+json") || context.Request.Query.ContainsKey("nostr"))
+        {
+            var relayOptions = context.RequestServices.GetRequiredService<IOptions<RelayOptions>>().Value;
+
+            var relayInfo = new NostrRelayInfo
+            {
+                Name = relayOptions.Name,
+                Description = relayOptions.Description,
+                Banner = relayOptions.Banner,
+                Icon = relayOptions.Icon,
+                Pubkey = relayOptions.Pubkey,
+                Contact = relayOptions.Contact,
+                SupportedNips = relayOptions.SupportedNips,
+                Software = relayOptions.Software,
+                Version = VersionInfo.GetCurrentVersion(),
+                PrivacyPolicy = relayOptions.PrivacyPolicy,
+                PostingPolicy = relayOptions.PostingPolicy,
+                TermsOfService = relayOptions.TermsOfService
+            };
+
+            context.Response.ContentType = "application/nostr+json";
+            await context.Response.WriteAsJsonAsync(relayInfo, NostrSerializationContext.Default.NostrRelayInfo);
+            return;
+        }
+        // Handle WebSocket requests
+        else if (context.WebSockets.IsWebSocketRequest)
+        {
+            var webSocket = await context.WebSockets.AcceptWebSocketAsync();
+            var handler = context.RequestServices.GetRequiredService<WebSocketHandler>();
+            await handler.HandleWebSocketAsync(context, webSocket);
+            return;
+        }
     }
-    else
-    {
-        // Continue with HTTP processing for non-WebSocket requests
-        await next();
-    }
+
+    // Continue with the pipeline for all other requests
+    await next();
 });
 
 // Migrated API from HomeController
@@ -246,24 +233,7 @@ todosApi.MapGet("/{id}", (int id) =>
         : Results.NotFound());
 
 // Make sure the fallback comes AFTER all API routes are registered
-app.MapFallbackToFile("{**path}", "index.html", new StaticFileOptions())
-   .AddEndpointFilter(async (context, next) =>
-   {
-       // Don't apply the fallback to API routes or .well-known paths
-       var path = context.HttpContext.Request.Path.Value ?? string.Empty;
-
-       // Normalize path for comparison (handle both with and without leading slash)
-       var normalizedPath = path.TrimStart('/').ToLowerInvariant();
-
-       // Check if the path is for API or .well-known routes
-       if (normalizedPath.StartsWith("api/") || normalizedPath.StartsWith(".well-known/"))
-       {
-           // Return NotFound to let the regular API routing handle this
-           return Results.NotFound();
-       }
-
-       return await next(context);
-   });
+app.MapFallbackToFile("index.html");
 
 // Helper methods migrated from DidController
 bool ValidateHexPubkey(string pubkey)
