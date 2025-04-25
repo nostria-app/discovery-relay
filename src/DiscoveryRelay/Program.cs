@@ -1,14 +1,12 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
+using Microsoft.Extensions.Options;
 using DiscoveryRelay;
 using DiscoveryRelay.Models;
 using DiscoveryRelay.Options;
-using Microsoft.Extensions.Options;
-using Microsoft.AspNetCore.Cors.Infrastructure;
 using DiscoveryRelay.Services;
 using DiscoveryRelay.Utilities;
-using System.Text.Json;
-using System.Text.RegularExpressions;
-using Microsoft.AspNetCore.Mvc;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -44,8 +42,7 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Add services to the container.
-builder.Services.AddControllers();
+// Add endpoints API explorer for OpenAPI/Swagger if used
 builder.Services.AddEndpointsApiExplorer();
 
 // Register WebSocketHandler as a singleton that will be properly disposed
@@ -77,7 +74,7 @@ app.UseWebSockets(webSocketOptions);
 // Add explicit routing middleware - this ensures all routes are properly evaluated
 app.UseRouting();
 
-// CORS middleware must be after UseRouting but before UseEndpoints/MapControllers
+// CORS middleware must be after UseRouting but before endpoints
 app.UseCors();
 
 // Enable static files - should come before route handling but after basic middleware
