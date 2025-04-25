@@ -10,6 +10,7 @@ FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS base
 USER $APP_UID
 WORKDIR /app
 EXPOSE 6565
+ENV ASPNETCORE_HTTP_PORTS=6565
 
 # This stage is used to build the service project
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
@@ -21,7 +22,7 @@ ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
 COPY ["src/DiscoveryRelay/DiscoveryRelay.csproj", "src/DiscoveryRelay/"]
 RUN dotnet restore "src/DiscoveryRelay/DiscoveryRelay.csproj"
-COPY . .
+COPY . . 
 WORKDIR "/src/src/DiscoveryRelay"
 RUN dotnet build "./DiscoveryRelay.csproj" -c $BUILD_CONFIGURATION -o /app/build
 
@@ -43,5 +44,6 @@ USER app
 FROM ${FINAL_BASE_IMAGE:-mcr.microsoft.com/dotnet/runtime-deps:9.0} AS final
 WORKDIR /app
 EXPOSE 6565
+ENV ASPNETCORE_HTTP_PORTS=6565
 COPY --from=publish /app/publish .
 ENTRYPOINT ["./DiscoveryRelay"]
