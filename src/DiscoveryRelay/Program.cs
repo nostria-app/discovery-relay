@@ -2,11 +2,13 @@ using System.Text.Json.Serialization;
 using DiscoveryRelay;
 using DiscoveryRelay.Models;
 using DiscoveryRelay.Options;
-using DiscoveryRelay.Controllers;
 using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using DiscoveryRelay.Services;
 using DiscoveryRelay.Utilities;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Mvc;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -61,7 +63,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
-app.UseHttpsRedirection();
+// Do not use, there is certificate termination in front of this app.
+// app.UseHttpsRedirection();
 
 // Configure WebSocket middleware
 var webSocketOptions = new WebSocketOptions
@@ -80,9 +83,6 @@ app.UseCors();
 // Enable static files - should come before route handling but after basic middleware
 app.UseDefaultFiles();
 app.UseStaticFiles();
-
-// Register controllers and API endpoints
-app.MapControllers();
 
 // Use a dedicated endpoint for Nostr relay info to ensure proper routing and CORS handling
 app.MapGet("/", async (HttpContext context, IOptions<RelayOptions> options) =>
@@ -145,6 +145,93 @@ app.Use(async (context, next) =>
     }
 });
 
+// Migrated API from HomeController
+var apiGroup = app.MapGroup("/api");
+
+apiGroup.MapGet("/version", () =>
+    new { version = VersionInfo.GetCurrentVersion() });
+
+apiGroup.MapGet("/status", () =>
+    new { status = "online", timestamp = DateTime.UtcNow });
+
+apiGroup.MapGet("/stats", (
+    WebSocketHandler webSocketHandler,
+    LmdbStorageService storageService,
+    ILogger<Program> logger) =>
+{
+    logger.LogInformation("Retrieving relay statistics");
+
+    var result = new Dictionary<string, object>
+    {
+        { "timestamp", DateTime.UtcNow },
+        { "connections", new {
+            activeConnections = webSocketHandler.GetActiveConnectionCount(),
+            totalSubscriptions = webSocketHandler.GetTotalSubscriptionCount()
+        }},
+        { "database", storageService.GetDatabaseStats() }
+    };
+
+    return Results.Ok(result);
+});
+
+apiGroup.MapPost("/broadcast", async (
+    BroadcastRequest request,
+    WebSocketHandler webSocketHandler,
+    ILogger<Program> logger) =>
+{
+    if (string.IsNullOrEmpty(request.Message))
+    {
+        return Results.BadRequest(new { error = "Message is required" });
+    }
+
+    logger.LogInformation("Broadcasting message: {Message}", request.Message);
+    await webSocketHandler.BroadcastMessageAsync(request.Message);
+
+    return Results.Ok(new { success = true });
+});
+
+// Migrated API from DidController
+var didGroup = app.MapGroup("/.well-known/did/nostr");
+
+didGroup.MapGet("{pubkey}.json", (
+    string pubkey,
+    LmdbStorageService storageService,
+    ILogger<Program> logger) =>
+{
+    logger.LogInformation("Retrieving DID document for public key: {PubKey}", pubkey);
+
+    // Normalize pubkey (ensure it's lowercase)
+    pubkey = pubkey.ToLowerInvariant();
+
+    // Validate the pubkey format (should be 64 hex characters)
+    if (!ValidateHexPubkey(pubkey))
+    {
+        logger.LogWarning("Invalid pubkey format: {PubKey}", pubkey);
+        return Results.BadRequest(new { error = "Invalid pubkey format. Expected 64 hex characters." });
+    }
+
+    // Try to get the event first from kind 10002, then from kind 3
+    NostrEvent? nostrEvent = storageService.GetEventByPubkeyAndKind(pubkey, 10002);
+    if (nostrEvent == null)
+    {
+        nostrEvent = storageService.GetEventByPubkeyAndKind(pubkey, 3);
+        if (nostrEvent == null)
+        {
+            logger.LogWarning("No events found for pubkey: {PubKey}", pubkey);
+
+            // If no events found, return a basic DID document without relay information
+            var basicDocument = DidNostrDocument.FromPubkey(pubkey);
+            return Results.Ok(basicDocument);
+        }
+    }
+
+    // Parse relays from the event and construct the DID document
+    var didDocument = BuildDidDocument(pubkey, nostrEvent);
+
+    logger.LogInformation("Successfully created DID document for {PubKey}", pubkey);
+    return Results.Ok(didDocument);
+});
+
 var sampleTodos = new Todo[] {
     new(1, "Walk the dog"),
     new(2, "Do the dishes", DateOnly.FromDateTime(DateTime.Now)),
@@ -180,7 +267,119 @@ app.MapFallbackToFile("{**path}", "index.html", new StaticFileOptions())
        return await next(context);
    });
 
+// Helper methods migrated from DidController
+bool ValidateHexPubkey(string pubkey)
+{
+    // Pubkey should be 64 hex characters
+    if (pubkey.Length != 64)
+    {
+        return false;
+    }
+
+    // All characters should be valid hex
+    return Regex.IsMatch(pubkey, "^[0-9a-fA-F]{64}$");
+}
+
+DidNostrDocument BuildDidDocument(string pubkey, NostrEvent nostrEvent)
+{
+    // Create the base DID document
+    var didDocument = DidNostrDocument.FromPubkey(pubkey);
+
+    // Parse relays from the event
+    var serviceList = new List<Service>();
+
+    // For kind 3 (contacts), extract relays from the content
+    if (nostrEvent.Kind == 10002)
+    {
+        // In kind 10002, relays are in the tags in the format ["r", <relay-url>]
+        int relayIndex = 1;
+        foreach (var tag in nostrEvent.Tags)
+        {
+            if (tag.Count >= 2 && tag[0] == "r" && !string.IsNullOrEmpty(tag[1]))
+            {
+                serviceList.Add(new Service
+                {
+                    Id = $"{didDocument.Id}#relay{relayIndex}",
+                    Type = "Relay",
+                    ServiceEndpoint = tag[1]
+                });
+                relayIndex++;
+            }
+        }
+    }
+    // For kind 10002 (relay list), parse the relays from the "r" tags
+    else if (nostrEvent.Kind == 3)
+    {
+        try
+        {
+            if (nostrEvent.Content != "")
+            {
+                // In kind 3, relays are in the content as JSON
+                var relayDict = JsonSerializer.Deserialize<Dictionary<string, object>>(nostrEvent.Content);
+                if (relayDict != null)
+                {
+                    int relayIndex = 1;
+                    foreach (var relay in relayDict.Keys)
+                    {
+                        serviceList.Add(new Service
+                        {
+                            Id = $"{didDocument.Id}#relay{relayIndex}",
+                            Type = "Relay",
+                            ServiceEndpoint = relay
+                        });
+                        relayIndex++;
+                    }
+                }
+            }
+        }
+        catch (JsonException ex)
+        {
+            var logger = app.Services.GetService<ILogger<Program>>();
+            logger?.LogWarning(ex, "Failed to parse relay list from kind 3 event content");
+        }
+    }
+
+    // Look for website or storage information in tags
+    if (nostrEvent.Tags != null)
+    {
+        foreach (var tag in nostrEvent.Tags)
+        {
+            if (tag.Count >= 2 && tag[0] == "website" && !string.IsNullOrEmpty(tag[1]))
+            {
+                // Add website as a service
+                serviceList.Add(new Service
+                {
+                    Id = $"{didDocument.Id}#website",
+                    Type = new[] { "Website", "LinkedDomains" },
+                    ServiceEndpoint = tag[1]
+                });
+            }
+            else if (tag.Count >= 2 && tag[0] == "storage" && !string.IsNullOrEmpty(tag[1]))
+            {
+                // Add storage endpoint as a service
+                serviceList.Add(new Service
+                {
+                    Id = $"{didDocument.Id}#storage",
+                    Type = "Storage",
+                    ServiceEndpoint = tag[1]
+                });
+            }
+        }
+    }
+
+    // Update the document with services
+    didDocument.Service = serviceList.ToArray();
+
+    return didDocument;
+}
+
 app.Run();
+
+// Keep this class for BroadcastRequest
+public class BroadcastRequest
+{
+    public string? Message { get; set; }
+}
 
 public record Todo(int Id, string? Title, DateOnly? DueBy = null, bool IsComplete = false);
 
