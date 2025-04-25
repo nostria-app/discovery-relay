@@ -1,11 +1,16 @@
 #!/usr/bin/env node
 
-const { program } = require('commander');
-const lmdb = require('node-lmdb');
-const chalk = require('chalk');
-const path = require('path');
-const { table } = require('table');
-const fs = require('fs');
+import { program } from 'commander';
+import lmdb from 'node-lmdb';
+import chalk from 'chalk';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { table } from 'table';
+import fs from 'fs';
+
+// Get __dirname equivalent in ESM
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Setup CLI program
 program
@@ -58,7 +63,7 @@ try {
   }
 
   // Query events
-  const txn = env.beginTransaction({ readOnly: true });
+  const txn = env.beginTxn({ readOnly: true });
   const cursor = new lmdb.Cursor(txn, db);
 
   const events = [];
@@ -67,11 +72,14 @@ try {
   // Iterate through events
   if (cursor.goToFirst()) {
     do {
-      const key = cursor.getCurrentString('utf8');
-      const value = cursor.getCurrentBinary();
-
       try {
-        const event = JSON.parse(value.toString('utf8'));
+        // Use key() and getValue() methods with explicit encoding
+        const key = cursor.getKey();
+        const valueBuffer = cursor.getValue();
+
+        // Parse the binary data to a string and then to JSON
+        const eventStr = Buffer.from(valueBuffer).toString('utf8');
+        const event = JSON.parse(eventStr);
 
         // Apply kind filter if needed
         if (kindFilter !== null && event.kind !== kindFilter) {

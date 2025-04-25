@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "CLI tool to interact with Discovery Relay LMDB database",
   "main": "index.js",
+  "type": "module",
   "bin": {
     "discovery-relay": "./index.js"
   },
