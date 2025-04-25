@@ -11,7 +11,6 @@ USER $APP_UID
 WORKDIR /app
 EXPOSE 8080
 
-
 # This stage is used to build the service project
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 # Install clang/zlib1g-dev dependencies for publishing to native
@@ -20,10 +19,10 @@ RUN apt-get update \
     clang zlib1g-dev
 ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
-COPY ["DiscoveryRelay/DiscoveryRelay.csproj", "DiscoveryRelay/"]
-RUN dotnet restore "./DiscoveryRelay/DiscoveryRelay.csproj"
+COPY ["src/DiscoveryRelay/DiscoveryRelay.csproj", "src/DiscoveryRelay/"]
+RUN dotnet restore "src/DiscoveryRelay/DiscoveryRelay.csproj"
 COPY . .
-WORKDIR "/src/DiscoveryRelay"
+WORKDIR "/src/src/DiscoveryRelay"
 RUN dotnet build "./DiscoveryRelay.csproj" -c $BUILD_CONFIGURATION -o /app/build
 
 # This stage is used to publish the service project to be copied to the final stage
