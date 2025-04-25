@@ -74,6 +74,9 @@ var webSocketOptions = new WebSocketOptions
 
 app.UseWebSockets(webSocketOptions);
 
+// Add explicit routing middleware - this ensures all routes are properly evaluated
+app.UseRouting();
+
 // Enable static files - should come before route handling but after basic middleware
 app.UseDefaultFiles();
 app.UseStaticFiles();
@@ -158,16 +161,19 @@ todosApi.MapGet("/{id}", (int id) =>
         : Results.NotFound());
 
 // Make sure the fallback comes AFTER all API routes are registered
-// and exclude API routes and well-known paths from the fallback
 app.MapFallbackToFile("{**path}", "index.html", new StaticFileOptions())
    .AddEndpointFilter(async (context, next) =>
    {
        // Don't apply the fallback to API routes or .well-known paths
        var path = context.HttpContext.Request.Path.Value ?? string.Empty;
-       if (path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase) ||
-           path.StartsWith("/.well-known/", StringComparison.OrdinalIgnoreCase) ||
-           path.StartsWith(".well-known/", StringComparison.OrdinalIgnoreCase))
+
+       // Normalize path for comparison (handle both with and without leading slash)
+       var normalizedPath = path.TrimStart('/').ToLowerInvariant();
+
+       // Check if the path is for API or .well-known routes
+       if (normalizedPath.StartsWith("api/") || normalizedPath.StartsWith(".well-known/"))
        {
+           // Return NotFound to let the regular API routing handle this
            return Results.NotFound();
        }
 
