@@ -54,7 +54,7 @@ public class DidController : ControllerBase
             if (nostrEvent == null)
             {
                 _logger.LogWarning("No events found for pubkey: {PubKey}", pubkey);
-                
+
                 // If no events found, return a basic DID document without relay information
                 var basicDocument = DidNostrDocument.FromPubkey(pubkey);
                 return Ok(basicDocument);
@@ -84,34 +84,16 @@ public class DidController : ControllerBase
     {
         // Create the base DID document
         var didDocument = DidNostrDocument.FromPubkey(pubkey);
-        
+
         // Parse relays from the event
         var serviceList = new List<Service>();
 
-        // For kind 3 (contacts), extract relays from the tags
+        // For kind 3 (contacts), extract relays from the content
         if (nostrEvent.Kind == 3)
-        {
-            // In kind 3, relays are typically in the format ["p", <pubkey>, <relay-url>, <petname>]
-            int relayIndex = 1;
-            foreach (var tag in nostrEvent.Tags)
-            {
-                if (tag.Count >= 3 && tag[0] == "p" && !string.IsNullOrEmpty(tag[2]))
-                {
-                    serviceList.Add(new Service
-                    {
-                        Id = $"{didDocument.Id}#relay{relayIndex}",
-                        Type = "Relay",
-                        ServiceEndpoint = tag[2]
-                    });
-                    relayIndex++;
-                }
-            }
-        }
-        // For kind 10002 (relay list), parse the list from the content
-        else if (nostrEvent.Kind == 10002)
         {
             try
             {
+                // In kind 3, relays are in the content as JSON
                 var relayDict = JsonSerializer.Deserialize<Dictionary<string, object>>(nostrEvent.Content);
                 if (relayDict != null)
                 {
@@ -130,7 +112,26 @@ public class DidController : ControllerBase
             }
             catch (JsonException ex)
             {
-                _logger.LogWarning(ex, "Failed to parse relay list from kind 10002 event content");
+                _logger.LogWarning(ex, "Failed to parse relay list from kind 3 event content");
+            }
+        }
+        // For kind 10002 (relay list), parse the relays from the "r" tags
+        else if (nostrEvent.Kind == 10002)
+        {
+            // In kind 10002, relays are in the tags in the format ["r", <relay-url>]
+            int relayIndex = 1;
+            foreach (var tag in nostrEvent.Tags)
+            {
+                if (tag.Count >= 2 && tag[0] == "r" && !string.IsNullOrEmpty(tag[1]))
+                {
+                    serviceList.Add(new Service
+                    {
+                        Id = $"{didDocument.Id}#relay{relayIndex}",
+                        Type = "Relay",
+                        ServiceEndpoint = tag[1]
+                    });
+                    relayIndex++;
+                }
             }
         }
 
