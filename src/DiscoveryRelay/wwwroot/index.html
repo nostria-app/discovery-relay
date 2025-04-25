@@ -13,7 +13,7 @@
         <img src="discovery-relay.jpg" alt="Discovery Relay Illustration" class="hero-image">
         <div class="hero-content">
             <h1>Discovery Relay WebSocket Test</h1>
-            <p>A Nostr relay specialized in discovery services and NIP-11 information.</p>
+            <p>A Nostr relay specialized in discovery services.</p>
         </div>
     </div>
 
@@ -48,8 +48,8 @@
                 <div class="info-label">Retention Policy:</div>
                 <div class="info-value" id="relay-retention">-</div>
 
-                <div class="info-label">Publish Policy:</div>
-                <div class="info-value" id="relay-publish">-</div>
+                <div class="info-label">Posting Policy:</div>
+                <div class="info-value" id="relay-posting">-</div>
 
                 <div class="info-label">Fees:</div>
                 <div class="info-value" id="relay-fees">-</div>
@@ -966,7 +966,7 @@
 
                     // Other fields
                     document.getElementById('relay-fees').textContent = formatFees(data) || '-';
-                    document.getElementById('relay-publish').textContent = formatPolicy(data.publication_policy) || '-';
+                    document.getElementById('relay-posting').textContent = formatPolicy(data.posting_policy) || '-';
                     document.getElementById('relay-privacy').innerHTML =
                         data.privacy_policy ? `<a href="${data.privacy_policy}" target="_blank">${data.privacy_policy}</a>` : '-';
 
