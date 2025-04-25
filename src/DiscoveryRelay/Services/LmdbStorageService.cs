@@ -56,7 +56,7 @@ public class LmdbStorageService : IDisposable
             // Initialize LMDB environment
             _env = new LightningEnvironment(_dbPath)
             {
-                MapSize = _mapSize,
+                MapSize = 10L * 1024L * 1024L, // 10MB for testing errors.
                 MaxDatabases = 1,
                 MaxReaders = _maxReaders,
             };
