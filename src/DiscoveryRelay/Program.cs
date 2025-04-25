@@ -6,6 +6,7 @@ using DiscoveryRelay.Controllers;
 using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using DiscoveryRelay.Services;
+using DiscoveryRelay.Utilities;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -30,7 +31,7 @@ builder.Services.AddCors(options =>
               .AllowAnyMethod()
               .WithExposedHeaders("*");
     });
-    
+
     // Add a specific policy for nostr requests
     options.AddPolicy("NostrPolicy", policy =>
     {
@@ -108,7 +109,7 @@ app.MapGet("/", async (HttpContext context, IOptions<RelayOptions> options) =>
             Contact = relayOptions.Contact,
             SupportedNips = relayOptions.SupportedNips,
             Software = relayOptions.Software,
-            Version = relayOptions.Version,
+            Version = VersionInfo.GetCurrentVersion(),
             PrivacyPolicy = relayOptions.PrivacyPolicy,
             PostingPolicy = relayOptions.PostingPolicy,
             TermsOfService = relayOptions.TermsOfService

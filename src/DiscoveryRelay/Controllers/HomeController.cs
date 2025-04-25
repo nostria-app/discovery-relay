@@ -1,4 +1,5 @@
 using DiscoveryRelay.Services;
+using DiscoveryRelay.Utilities;
 using Microsoft.AspNetCore.Mvc;
 
 namespace DiscoveryRelay.Controllers;
@@ -16,6 +17,12 @@ public class HomeController : ControllerBase
         _webSocketHandler = webSocketHandler;
         _storageService = storageService;
         _logger = logger;
+    }
+
+    [HttpGet("version")]
+    public IActionResult GetVersion()
+    {
+        return Ok(new { version = VersionInfo.GetCurrentVersion() });
     }
 
     [HttpGet("status")]
@@ -52,7 +59,7 @@ public class HomeController : ControllerBase
 
         _logger.LogInformation("Broadcasting message: {Message}", request.Message);
         await _webSocketHandler.BroadcastMessageAsync(request.Message);
-        
+
         return Ok(new { success = true });
     }
 }
