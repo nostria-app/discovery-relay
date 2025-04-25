@@ -25,6 +25,8 @@ public class WebSocketHandler : IDisposable
     // Add allowed event kinds
     private readonly HashSet<int> _allowedEventKinds = new() { 3, 10002 };
 
+    private const int MaxBufferSize = 16 * 1024; // Set buffer to 16KB
+
     public WebSocketHandler(
         ILogger<WebSocketHandler> logger,
         IOptions<RelayOptions> options,
@@ -96,7 +98,7 @@ public class WebSocketHandler : IDisposable
         {
             subscriptionsByClient[client.Key] = client.Value.Count;
         }
-        
+
         stats["subscriptionsByClient"] = subscriptionsByClient;
         return stats;
     }
@@ -270,8 +272,11 @@ public class WebSocketHandler : IDisposable
 
     private async Task ProcessWebSocketAsync(string socketId, WebSocket webSocket, CancellationToken cancellationToken)
     {
-        var buffer = new byte[1024 * 4];
+        var buffer = new byte[MaxBufferSize]; // Use the larger buffer size
         WebSocketReceiveResult receiveResult;
+
+        // Create a memory stream to handle messages that span multiple frames
+        using var messageBuffer = new MemoryStream();
 
         try
         {
@@ -289,9 +294,28 @@ public class WebSocketHandler : IDisposable
                     // Update last activity time on any message received
                     _lastActivityTime[socketId] = DateTime.UtcNow;
 
-                    // Process the received message
-                    var receivedMessage = Encoding.UTF8.GetString(buffer, 0, receiveResult.Count);
-                    _logger.LogDebug("Message received from {SocketId}: {Message}", socketId, receivedMessage);
+                    // Add current frame to the message buffer
+                    messageBuffer.Write(buffer, 0, receiveResult.Count);
+
+                    // If this isn't the final frame, continue receiving
+                    if (!receiveResult.EndOfMessage)
+                    {
+                        _logger.LogDebug("Received partial message from {SocketId}, continuing to next frame", socketId);
+                        receiveResult = await webSocket.ReceiveAsync(
+                            new ArraySegment<byte>(buffer), cancellationToken);
+                        continue;
+                    }
+
+                    // Process the complete message
+                    var messageBytes = messageBuffer.ToArray();
+                    var receivedMessage = Encoding.UTF8.GetString(messageBytes, 0, messageBytes.Length);
+
+                    _logger.LogDebug("Message received from {SocketId} (size: {Size} bytes): {MessagePreview}...",
+                        socketId, messageBytes.Length,
+                        receivedMessage.Length > 100 ? receivedMessage.Substring(0, 100) : receivedMessage);
+
+                    // Clear the memory stream for the next message
+                    messageBuffer.SetLength(0);
 
                     // Try to parse as Nostr message
                     if (TryParseNostrMessage(socketId, receivedMessage, out string? responseMessage))
@@ -310,7 +334,7 @@ public class WebSocketHandler : IDisposable
                     else
                     {
                         // If not a Nostr message, echo the message back as before
-                        var echoMessage = $"Echo: {receivedMessage}";
+                        var echoMessage = $"Echo: {(receivedMessage.Length > 100 ? receivedMessage.Substring(0, 100) + "..." : receivedMessage)}";
                         var echoBytes = Encoding.UTF8.GetBytes(echoMessage);
 
                         await webSocket.SendAsync(
@@ -379,6 +403,15 @@ public class WebSocketHandler : IDisposable
 
         try
         {
+            // Add safeguard for message size
+            if (message.Length > MaxBufferSize)
+            {
+                _logger.LogWarning("Message from {SocketId} exceeds maximum size ({Size} bytes)",
+                    socketId, message.Length);
+                responseMessage = CreateNostrErrorResponse("Message too large");
+                return true;
+            }
+
             // Try to parse as JSON array first
             var jsonDocument = JsonDocument.Parse(message);
 
@@ -634,8 +667,11 @@ public class WebSocketHandler : IDisposable
         }
         catch (JsonException ex)
         {
-            _logger.LogWarning(ex, "Failed to parse message as Nostr protocol: {Message}", message);
-            return false;
+            _logger.LogWarning(ex, "Failed to parse message as Nostr protocol from {SocketId}: {MessageLength} bytes, Error: {Error}",
+                socketId, message.Length, ex.Message);
+
+            responseMessage = CreateNostrErrorResponse($"Invalid JSON: {ex.Message}");
+            return true;
         }
     }
 
