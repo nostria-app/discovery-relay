@@ -55,11 +55,6 @@ public class RelayOptions
     public string Software { get; set; } = "https://github.com/sondreb/discovery-relay";
 
     /// <summary>
-    /// Version of the relay software
-    /// </summary>
-    public string Version { get; set; } = "1.0.0";
-
-    /// <summary>
     /// Privacy policy URL for the relay
     /// </summary>
     public string? PrivacyPolicy { get; set; }
