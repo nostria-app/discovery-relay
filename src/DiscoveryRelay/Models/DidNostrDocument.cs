@@ -22,6 +22,12 @@ public class DidNostrDocument
     [JsonPropertyName("assertionMethod")]
     public string[] AssertionMethod { get; set; } = Array.Empty<string>();
 
+    [JsonPropertyName("capabilityDelegation")]
+    public string[] CapabilityDelegation { get; set; } = Array.Empty<string>();
+
+    [JsonPropertyName("capabilityInvocation")]
+    public string[] CapabilityInvocation { get; set; } = Array.Empty<string>();
+
     [JsonPropertyName("service")]
     public Service[] Service { get; set; } = Array.Empty<Service>();
 
@@ -44,7 +50,9 @@ public class DidNostrDocument
                 }
             },
             Authentication = new[] { "#key1" },
-            AssertionMethod = new[] { "#key1" }
+            AssertionMethod = new[] { "#key1" },
+            CapabilityDelegation = new[] { "#key1" },
+            CapabilityInvocation = new[] { "#key1" },
         };
     }
 }
