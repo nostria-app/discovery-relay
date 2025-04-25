@@ -146,10 +146,10 @@ app.Use(async (context, next) =>
 var apiGroup = app.MapGroup("/api");
 
 apiGroup.MapGet("/version", () =>
-    new { version = VersionInfo.GetCurrentVersion() });
+    Results.Ok(new VersionResponse(VersionInfo.GetCurrentVersion())));
 
 apiGroup.MapGet("/status", () =>
-    new { status = "online", timestamp = DateTime.UtcNow });
+    Results.Ok(new StatusResponse("online", DateTime.UtcNow)));
 
 apiGroup.MapGet("/stats", (
     WebSocketHandler webSocketHandler,
@@ -158,17 +158,18 @@ apiGroup.MapGet("/stats", (
 {
     logger.LogInformation("Retrieving relay statistics");
 
-    var result = new Dictionary<string, object>
-    {
-        { "timestamp", DateTime.UtcNow },
-        { "connections", new {
-            activeConnections = webSocketHandler.GetActiveConnectionCount(),
-            totalSubscriptions = webSocketHandler.GetTotalSubscriptionCount()
-        }},
-        { "database", storageService.GetDatabaseStats() }
-    };
+    var connections = new ConnectionInfo(
+        webSocketHandler.GetActiveConnectionCount(),
+        webSocketHandler.GetTotalSubscriptionCount()
+    );
 
-    return Results.Ok(result);
+    var response = new StatsResponse(
+        DateTime.UtcNow,
+        connections,
+        storageService.GetDatabaseStats()
+    );
+
+    return Results.Ok(response);
 });
 
 apiGroup.MapPost("/broadcast", async (
@@ -178,13 +179,13 @@ apiGroup.MapPost("/broadcast", async (
 {
     if (string.IsNullOrEmpty(request.Message))
     {
-        return Results.BadRequest(new { error = "Message is required" });
+        return Results.BadRequest(new ErrorResponse("Message is required"));
     }
 
     logger.LogInformation("Broadcasting message: {Message}", request.Message);
     await webSocketHandler.BroadcastMessageAsync(request.Message);
 
-    return Results.Ok(new { success = true });
+    return Results.Ok(new BroadcastResponse(true));
 });
 
 // Migrated API from DidController
@@ -204,7 +205,7 @@ didGroup.MapGet("{pubkey}.json", (
     if (!ValidateHexPubkey(pubkey))
     {
         logger.LogWarning("Invalid pubkey format: {PubKey}", pubkey);
-        return Results.BadRequest(new { error = "Invalid pubkey format. Expected 64 hex characters." });
+        return Results.BadRequest(new ErrorResponse("Invalid pubkey format. Expected 64 hex characters."));
     }
 
     // Try to get the event first from kind 10002, then from kind 3
@@ -384,3 +385,15 @@ public record Todo(int Id, string? Title, DateOnly? DueBy = null, bool IsComplet
 internal partial class AppJsonSerializerContext : JsonSerializerContext
 {
 }
+
+public record VersionResponse(string Version);
+
+public record StatusResponse(string Status, DateTime Timestamp);
+
+public record ConnectionInfo(int ActiveConnections, int TotalSubscriptions);
+
+public record StatsResponse(DateTime Timestamp, ConnectionInfo Connections, object DatabaseStats);
+
+public record ErrorResponse(string Error);
+
+public record BroadcastResponse(bool Success);

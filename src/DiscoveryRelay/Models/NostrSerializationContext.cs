@@ -22,6 +22,21 @@ namespace DiscoveryRelay.Models;
 [JsonSerializable(typeof(DidNostrDocument))]
 [JsonSerializable(typeof(VerificationMethod))]
 [JsonSerializable(typeof(Service))]
+// Add API response model types for source generation
+[JsonSerializable(typeof(VersionResponse))]
+[JsonSerializable(typeof(StatusResponse))]
+[JsonSerializable(typeof(StatsResponse))]
+[JsonSerializable(typeof(ConnectionInfo))]
+[JsonSerializable(typeof(BroadcastResponse))]
+[JsonSerializable(typeof(ErrorResponse))]
 internal partial class NostrSerializationContext : JsonSerializerContext
 {
 }
+
+// Model classes for API responses
+public record VersionResponse(string Version);
+public record StatusResponse(string Status, DateTime Timestamp);
+public record ConnectionInfo(int ActiveConnections, int TotalSubscriptions);
+public record StatsResponse(DateTime Timestamp, ConnectionInfo Connections, Dictionary<string, object> Database);
+public record BroadcastResponse(bool Success);
+public record ErrorResponse(string Error);
