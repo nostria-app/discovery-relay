@@ -18,8 +18,8 @@ public class LmdbStorageService : IDisposable
     private const string EventsDbName = "events";
 
     // Write statistics tracking
-    private int _writeCount = 0;
-    private int _lastWriteCount = 0;
+    private long _writeCount = 0;
+    private long _lastWriteCount = 0;
     private readonly object _statsLock = new object();
     private Timer _statsTimer;
     private readonly int _statsIntervalSeconds;
@@ -52,16 +52,35 @@ public class LmdbStorageService : IDisposable
 
         Initialize();
 
+        // Count existing records and update _writeCount
+        InitializeWriteCounter();
+
         // Initialize statistics timer
         _statsTimer = new Timer(LogWriteStatistics, null,
             TimeSpan.FromSeconds(_statsIntervalSeconds),
             TimeSpan.FromSeconds(_statsIntervalSeconds));
     }
 
+    private void InitializeWriteCounter()
+    {
+        try
+        {
+            using var tx = _env.BeginTransaction(TransactionBeginFlags.ReadOnly);
+            using var db = tx.OpenDatabase(EventsDbName);
+            using var cursor = tx.CreateCursor(db);
+            _writeCount = db.DatabaseStats.Entries;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to initialize write counter from existing records");
+            // If counting fails, keep counters at zero
+        }
+    }
+
     private void LogWriteStatistics(object? state)
     {
-        int currentCount;
-        int previousCount;
+        long currentCount;
+        long previousCount;
 
         lock (_statsLock)
         {
@@ -70,7 +89,7 @@ public class LmdbStorageService : IDisposable
             _lastWriteCount = currentCount;
         }
 
-        int writesPerInterval = currentCount - previousCount;
+        long writesPerInterval = currentCount - previousCount;
         double writesPerSecond = (double)writesPerInterval / _statsIntervalSeconds;
 
         _logger.LogInformation("LMDB Write Stats: {WritesPerInterval} writes in {IntervalSeconds} seconds ({WritesPerSecond:F2} writes/sec), Total: {TotalWrites}",
