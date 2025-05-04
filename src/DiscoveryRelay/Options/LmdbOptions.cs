@@ -23,4 +23,9 @@ public class LmdbOptions
     /// Interval in seconds for logging write statistics (minimum 10 seconds)
     /// </summary>
     public int StatsIntervalSeconds { get; set; } = 10;
+
+    /// <summary>
+    /// GUID used for authenticating stop/start database API calls
+    /// </summary>
+    public string ApiAuthenticationGuid { get; set; } = "";
 }

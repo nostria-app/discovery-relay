@@ -159,6 +159,74 @@ apiGroup.MapGet("/stats", (
     return Results.Ok(response);
 });
 
+// Stop database endpoint
+apiGroup.MapGet("/stop", (
+    string key,
+    IOptions<LmdbOptions> options,
+    LmdbStorageService storageService,
+    ILogger<Program> logger) =>
+{
+    if (string.IsNullOrEmpty(options.Value.ApiAuthenticationGuid))
+    {
+        logger.LogWarning("Database control API authentication is not configured. Access denied.");
+        return Results.Unauthorized();
+    }
+
+    if (string.IsNullOrEmpty(key) || key != options.Value.ApiAuthenticationGuid)
+    {
+        logger.LogWarning("Invalid authentication GUID provided for database stop operation");
+        return Results.Unauthorized();
+    }
+
+    logger.LogInformation("Authorized request to stop database received");
+    bool result = storageService.StopDatabase();
+
+    if (result)
+    {
+        return Results.Ok(new { message = "Database stopped successfully" });
+    }
+    else
+    {
+        return Results.BadRequest(new { error = "Failed to stop database, may already be stopped" });
+    }
+});
+
+// Start database endpoint
+apiGroup.MapGet("/start", (
+    string key,
+    IOptions<LmdbOptions> options,
+    LmdbStorageService storageService,
+    ILogger<Program> logger) =>
+{
+    if (string.IsNullOrEmpty(options.Value.ApiAuthenticationGuid))
+    {
+        logger.LogWarning("Database control API authentication is not configured. Access denied.");
+        return Results.Unauthorized();
+    }
+
+    if (string.IsNullOrEmpty(key) || key != options.Value.ApiAuthenticationGuid)
+    {
+        logger.LogWarning("Invalid authentication GUID provided for database start operation");
+        return Results.Unauthorized();
+    }
+
+    logger.LogInformation("Authorized request to start database received");
+    bool result = storageService.StartDatabase();
+
+    if (result)
+    {
+        return Results.Ok(new { message = "Database started successfully" });
+    }
+    else
+    {
+        return Results.BadRequest(new { error = "Failed to start database, may already be running" });
+    }
+});
+
+
+
+
+
 apiGroup.MapPost("/broadcast", async (
     BroadcastRequest request,
     WebSocketHandler webSocketHandler,

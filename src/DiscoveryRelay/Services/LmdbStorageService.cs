@@ -16,6 +16,9 @@ public class LmdbStorageService : IDisposable
     private long _mapSize = 1024L * 1024L;
     private int _maxReaders = 4096;
     private const string EventsDbName = "events";
+    private readonly IOptions<LmdbOptions> _options;
+    private bool _isStopped = false;
+    private readonly object _stopLock = new object();
 
     // Write statistics tracking
     private long _writeCount = 0;
@@ -27,6 +30,7 @@ public class LmdbStorageService : IDisposable
     public LmdbStorageService(ILogger<LmdbStorageService> logger, IOptions<LmdbOptions> options)
     {
         _logger = logger;
+        _options = options;
         _dbPath = options.Value.DatabasePath;
 
         _jsonOptions = new JsonSerializerOptions
@@ -38,7 +42,6 @@ public class LmdbStorageService : IDisposable
 
         if (options.Value.SizeInMb > 0)
         {
-            // _mapSize = 10L * 1024L * 1024L * 1024L;
             _mapSize = options.Value.SizeInMb * _mapSize;
         }
 
@@ -135,11 +138,98 @@ public class LmdbStorageService : IDisposable
     }
 
     /// <summary>
+    /// Stops the database service. Used when backing up the database files.
+    /// </summary>
+    public bool StopDatabase()
+    {
+        lock (_stopLock)
+        {
+            if (_isStopped)
+            {
+                _logger.LogWarning("Database is already stopped");
+                return false;
+            }
+
+            try
+            {
+                _logger.LogInformation("Stopping LMDB database service");
+                _statsTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+                _env?.Dispose();
+                _env = null;
+                _isStopped = true;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error stopping LMDB database");
+                return false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Starts the database service. Used after backing up the database files.
+    /// </summary>
+    public bool StartDatabase()
+    {
+        lock (_stopLock)
+        {
+            if (!_isStopped)
+            {
+                _logger.LogWarning("Database is already running");
+                return false;
+            }
+
+            try
+            {
+                _logger.LogInformation("Starting LMDB database service");
+                Initialize();
+                InitializeWriteCounter();
+
+                // Restart the statistics timer
+                _statsTimer?.Dispose();
+                _statsTimer = new Timer(LogWriteStatistics, null,
+                    TimeSpan.FromSeconds(_statsIntervalSeconds),
+                    TimeSpan.FromSeconds(_statsIntervalSeconds));
+
+                _isStopped = false;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error starting LMDB database");
+                return false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Checks if the database service is currently stopped
+    /// </summary>
+    public bool IsDatabaseStopped()
+    {
+        lock (_stopLock)
+        {
+            return _isStopped;
+        }
+    }
+
+    /// <summary>
     /// Stores a Nostr event in the LMDB database, but only if it's newer than any existing event for the same pubkey and kind
     /// </summary>
     public bool StoreEvent(NostrEvent nostrEvent)
     {
         if (_disposed) throw new ObjectDisposedException(nameof(LmdbStorageService));
+
+        // Check if database is stopped and return immediately if it is
+        lock (_stopLock)
+        {
+            if (_isStopped)
+            {
+                _logger.LogWarning("Attempted to store event while database is stopped");
+                return false;
+            }
+        }
 
         // Only store events with kind 3 or 10002
         if (nostrEvent.Kind != 3 && nostrEvent.Kind != 10002)
@@ -245,6 +335,16 @@ public class LmdbStorageService : IDisposable
     {
         if (_disposed) throw new ObjectDisposedException(nameof(LmdbStorageService));
 
+        // Check if database is stopped and return immediately if it is
+        lock (_stopLock)
+        {
+            if (_isStopped)
+            {
+                _logger.LogWarning("Attempted to get event while database is stopped");
+                return null;
+            }
+        }
+
         if (kind != 3 && kind != 10002)
         {
             _logger.LogWarning("Attempted to get event with unsupported kind: {Kind}", kind);
@@ -285,13 +385,23 @@ public class LmdbStorageService : IDisposable
     {
         if (_disposed) throw new ObjectDisposedException(nameof(LmdbStorageService));
 
+        // Check if database is stopped and return immediately if it is
+        lock (_stopLock)
+        {
+            if (_isStopped)
+            {
+                _logger.LogWarning("Attempted to get event count while database is stopped");
+                return null;
+            }
+        }
+
         try
         {
             using var tx = _env.BeginTransaction(TransactionBeginFlags.ReadOnly);
             using var db = tx.OpenDatabase(EventsDbName);
 
             // Use database statistics to get count
-            var stat = db.DatabaseStats; // ;.Stat(tx);
+            var stat = db.DatabaseStats;
             return stat;
         }
         catch (Exception ex)
@@ -307,6 +417,16 @@ public class LmdbStorageService : IDisposable
     public Dictionary<int, int> GetEventCountsByKind()
     {
         if (_disposed) throw new ObjectDisposedException(nameof(LmdbStorageService));
+
+        // Check if database is stopped and return immediately if it is
+        lock (_stopLock)
+        {
+            if (_isStopped)
+            {
+                _logger.LogWarning("Attempted to get event counts by kind while database is stopped");
+                return new Dictionary<int, int> { { 3, 0 }, { 10002, 0 } };
+            }
+        }
 
         var counts = new Dictionary<int, int>
         {
@@ -328,26 +448,6 @@ public class LmdbStorageService : IDisposable
 
             counts[0] = count;
 
-            // while (result.IsSuccess)
-            // {
-            //     var keyStr = System.Text.Encoding.UTF8.GetString(result.Key);
-            //     if (keyStr.EndsWith("::3"))
-            //     {
-            //         counts[3]++;
-            //     }
-            //     else if (keyStr.EndsWith("::10002"))
-            //     {
-            //         counts[10002]++;
-            //     }
-
-            //     if (!cursor.TryMoveNext())
-            //     {
-            //         break;
-            //     }
-
-            //     result = cursor.TryGetCurrent();
-            // }
-
             return counts;
         }
         catch (Exception ex)
@@ -364,6 +464,16 @@ public class LmdbStorageService : IDisposable
     {
         if (_disposed) throw new ObjectDisposedException(nameof(LmdbStorageService));
 
+        // Check if database is stopped and return immediately if it is
+        lock (_stopLock)
+        {
+            if (_isStopped)
+            {
+                _logger.LogWarning("Attempted to get recent events while database is stopped");
+                return new List<NostrEvent>();
+            }
+        }
+
         var events = new List<NostrEvent>();
 
         try
@@ -375,29 +485,6 @@ public class LmdbStorageService : IDisposable
             var allEvents = new List<NostrEvent>();
             using var cursor = tx.CreateCursor(db);
 
-            // Iterate through all entries
-            // if (cursor.TryMoveToFirst())
-            // {
-            //     var result = cursor.TryGetCurrent();
-            //     while (result.IsSuccess)
-            //     {
-            //         var json = System.Text.Encoding.UTF8.GetString(result.Value);
-            //         var nostrEvent = JsonSerializer.Deserialize(json, NostrSerializationContext.Default.NostrEvent);
-            //         if (nostrEvent != null)
-            //         {
-            //             allEvents.Add(nostrEvent);
-            //         }
-
-            //         if (!cursor.TryMoveNext())
-            //         {
-            //             break;
-            //         }
-
-            //         result = cursor.TryGetCurrent();
-            //     }
-            // }
-
-            // Sort by timestamp (descending) and take the most recent ones
             events = allEvents
                 .OrderByDescending(e => e.CreatedAt)
                 .Take(limit)
@@ -421,8 +508,21 @@ public class LmdbStorageService : IDisposable
 
         var stats = new Dictionary<string, object>();
 
+        // Check if database is stopped and return minimal stats if it is
+        lock (_stopLock)
+        {
+            if (_isStopped)
+            {
+                _logger.LogWarning("Database statistics requested while database is stopped");
+                stats["status"] = "stopped";
+                stats["databasePath"] = _dbPath;
+                return stats;
+            }
+        }
+
         try
         {
+            stats["status"] = "running";
             stats["totalEvents"] = GetEventCount();
             stats["eventsByKind"] = GetEventCountsByKind();
             stats["recentEvents"] = GetRecentEvents(10);
@@ -430,10 +530,6 @@ public class LmdbStorageService : IDisposable
             // Get environment stats
             var envInfo = _env.EnvironmentStats;
             stats["databasePath"] = _dbPath;
-            // stats["mapSize"] = envInfo.MapSize;
-            // stats["lastPageNumber"] = envInfo.LastPageNumber;
-            // stats["maxReaders"] = envInfo.MaxReaders;
-            // stats["numReaders"] = envInfo.NumReaders;
 
             return stats;
         }
