@@ -2,8 +2,8 @@ name: Build
 
 on:
   push:
-    branches: [ main2 ]
-  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
   
 jobs:
   build:
