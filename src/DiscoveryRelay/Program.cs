@@ -240,7 +240,7 @@ apiGroup.MapPost("/broadcast", async (
     logger.LogInformation("Broadcasting message: {Message}", request.Message);
     await webSocketHandler.BroadcastMessageAsync(request.Message);
 
-    return Results.Ok(new BroadcastResponse(true));
+    return Results.Ok(new DiscoveryRelay.Models.BroadcastResponse(true));
 });
 
 // Migrated API from DidController
@@ -433,5 +433,3 @@ public record ConnectionInfo(int ActiveConnections, int TotalSubscriptions);
 public record StatsResponse(DateTime Timestamp, ConnectionInfo Connections, object DatabaseStats);
 
 public record ErrorResponse(string Error);
-
-public record BroadcastResponse(bool Success);
