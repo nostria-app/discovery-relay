@@ -278,7 +278,7 @@ public class LmdbStorageService : IDisposable
                 if (tx.TryGet(eventsDb, keyBytesRelayList, out var _))
                 {
                     // There is already a kind 10002 event, so we will not store the kind 3 event.
-                    _logger.LogInformation("Found existing event for {Pubkey} and kind 3: Skipping saving kind 10002.", pubkey);
+                    _logger.LogDebug("Found existing event for {Pubkey} and kind 3: Skipping saving kind 10002.", pubkey);
                     return false;
                 }
             }
