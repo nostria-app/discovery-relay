@@ -20,7 +20,7 @@ public class WebSocketHandler : IDisposable
     private readonly Timer _statsTimer;
     private readonly Timer _idleConnectionTimer;
     private readonly RelayOptions _options;
-    private readonly LmdbStorageService _storageService;
+    private readonly IStorageProvider _storageService;
     private readonly CancellationTokenSource _shutdownTokenSource = new CancellationTokenSource();
     private readonly int _maxMessageLength;
 
@@ -29,7 +29,7 @@ public class WebSocketHandler : IDisposable
     public WebSocketHandler(
         ILogger<WebSocketHandler> logger,
         IOptions<RelayOptions> options,
-        LmdbStorageService storageService)
+        IStorageProvider storageService)
     {
         _logger = logger;
         _options = options.Value;
@@ -338,7 +338,8 @@ public class WebSocketHandler : IDisposable
 
                     messageBuffer.SetLength(0);
 
-                    if (TryParseNostrMessage(socketId, receivedMessage, out string? responseMessage))
+                    var (handled, responseMessage) = await TryParseNostrMessageAsync(socketId, receivedMessage);
+                    if (handled)
                     {
                         if (!string.IsNullOrEmpty(responseMessage))
                         {
@@ -384,6 +385,7 @@ public class WebSocketHandler : IDisposable
                     }
                     catch
                     {
+                        // Ignore errors when trying to send error messages
                     }
 
                     messageBuffer.SetLength(0);
@@ -410,9 +412,9 @@ public class WebSocketHandler : IDisposable
         }
     }
 
-    private bool TryParseNostrMessage(string socketId, string message, out string? responseMessage)
+    private async Task<(bool Handled, string? ResponseMessage)> TryParseNostrMessageAsync(string socketId, string message)
     {
-        responseMessage = null;
+        string? responseMessage = null;
 
         try
         {
@@ -421,7 +423,7 @@ public class WebSocketHandler : IDisposable
                 _logger.LogWarning("Message from {SocketId} exceeds maximum size ({Size} bytes)",
                     socketId, message.Length);
                 responseMessage = CreateNostrErrorResponse($"Message too large. Maximum allowed size is {_maxMessageLength} bytes");
-                return true;
+                return (true, responseMessage);
             }
 
             var jsonDocument = JsonDocument.Parse(message);
@@ -429,7 +431,7 @@ public class WebSocketHandler : IDisposable
             if (jsonDocument.RootElement.ValueKind != JsonValueKind.Array ||
                 jsonDocument.RootElement.GetArrayLength() < 2)
             {
-                return false;
+                return (false, null);
             }
 
             var messageType = jsonDocument.RootElement[0].GetString();
@@ -449,7 +451,7 @@ public class WebSocketHandler : IDisposable
                     {
                         _logger.LogWarning("EVENT deserialization failed - returned null object");
                         responseMessage = CreateNostrErrorResponse("Invalid event format");
-                        return true;
+                        return (true, responseMessage);
                     }
 
                     _logger.LogDebug("Received EVENT from {SocketId}, kind: {Kind}, id: {Id}, pubkey: {PubKey}, created_at: {CreatedAt}, signature length: {SigLength}",
@@ -459,28 +461,28 @@ public class WebSocketHandler : IDisposable
                     {
                         _logger.LogWarning("Rejected event: missing ID field");
                         responseMessage = CreateNostrErrorResponse("Invalid event: missing ID field");
-                        return true;
+                        return (true, responseMessage);
                     }
 
                     if (string.IsNullOrEmpty(nostrEvent.PubKey))
                     {
                         _logger.LogWarning("Rejected event {Id}: missing PubKey field", nostrEvent.Id);
                         responseMessage = CreateNostrErrorResponse("Invalid event: missing PubKey field");
-                        return true;
+                        return (true, responseMessage);
                     }
 
                     if (string.IsNullOrEmpty(nostrEvent.Signature))
                     {
                         _logger.LogWarning("Rejected event {Id}: missing Signature field", nostrEvent.Id);
                         responseMessage = CreateNostrErrorResponse("Invalid event: missing Signature field");
-                        return true;
+                        return (true, responseMessage);
                     }
 
                     if (!_allowedEventKinds.Contains(nostrEvent.Kind))
                     {
                         _logger.LogWarning("Rejected event {Id} with unsupported kind: {Kind}", nostrEvent.Id, nostrEvent.Kind);
                         responseMessage = $"[\"OK\",\"{nostrEvent.Id}\",false,\"restricted: only kinds 3 and 10002 are accepted\"]";
-                        return true;
+                        return (true, responseMessage);
                     }
 
                     if (nostrEvent.CreatedAt <= 0)
@@ -488,7 +490,7 @@ public class WebSocketHandler : IDisposable
                         _logger.LogWarning("Rejected event {Id}: invalid or missing CreatedAt timestamp: {CreatedAt}",
                             nostrEvent.Id, nostrEvent.CreatedAt);
                         responseMessage = $"[\"OK\",\"{nostrEvent.Id}\",false,\"invalid: created_at timestamp is invalid\"]";
-                        return true;
+                        return (true, responseMessage);
                     }
 
                     string? validationError = nostrEvent.VerifySignature();
@@ -497,7 +499,7 @@ public class WebSocketHandler : IDisposable
                         _logger.LogWarning("Rejected event {Id}: signature validation failed: {Error}",
                             nostrEvent.Id, validationError);
                         responseMessage = $"[\"OK\",\"{nostrEvent.Id}\",false,\"invalid: {validationError}\"]";
-                        return true;
+                        return (true, responseMessage);
                     }
 
                     string calculatedId = nostrEvent.CalculateId();
@@ -506,30 +508,30 @@ public class WebSocketHandler : IDisposable
                         _logger.LogWarning("Rejected event: ID mismatch. Provided: {ProvidedId}, Calculated: {CalculatedId}",
                             nostrEvent.Id, calculatedId);
                         responseMessage = $"[\"OK\",\"{nostrEvent.Id}\",false,\"invalid: event id does not match calculated id\"]";
-                        return true;
+                        return (true, responseMessage);
                     }
 
-                    _logger.LogDebug("Attempting to store event {Id} in LMDB", nostrEvent.Id);
-                    bool stored = _storageService.StoreEvent(nostrEvent);
+                    _logger.LogDebug("Attempting to store event {Id} in storage", nostrEvent.Id);
+                    bool stored = await _storageService.StoreEventAsync(nostrEvent);
 
                     if (!stored)
                     {
-                        _logger.LogDebug("Failed to store event {Id} in LMDB - storage service returned false", nostrEvent.Id);
+                        _logger.LogDebug("Failed to store event {Id} in storage - storage service returned false", nostrEvent.Id);
                         responseMessage = $"[\"OK\",\"{nostrEvent.Id}\",false,\"error: failed to store event\"]";
-                        return true;
+                        return (true, responseMessage);
                     }
 
-                    _logger.LogDebug("Event {Id} successfully stored in LMDB", nostrEvent.Id);
+                    _logger.LogDebug("Event {Id} successfully stored in storage", nostrEvent.Id);
 
                     responseMessage = $"[\"OK\",\"{nostrEvent.Id}\",true,\"\"]";
 
-                    return true;
+                    return (true, responseMessage);
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error processing EVENT message");
                     responseMessage = CreateNostrErrorResponse($"Error processing event: {ex.Message}");
-                    return true;
+                    return (true, responseMessage);
                 }
             }
             else if (messageType == "REQ" && jsonDocument.RootElement.GetArrayLength() >= 3)
@@ -589,7 +591,7 @@ public class WebSocketHandler : IDisposable
                 if (hasInvalidKinds)
                 {
                     responseMessage = CreateNostrErrorResponse("restricted: only kinds 3 and 10002 are supported");
-                    return true;
+                    return (true, responseMessage);
                 }
 
                 if (_clientSubscriptions.TryGetValue(socketId, out var subscriptions))
@@ -615,7 +617,7 @@ public class WebSocketHandler : IDisposable
                     SendEoseMessage(socketId, subscriptionId);
                 }
 
-                return true;
+                return (true, null);
             }
             else if (messageType == "CLOSE" && jsonDocument.RootElement.GetArrayLength() >= 2)
             {
@@ -648,10 +650,10 @@ public class WebSocketHandler : IDisposable
                 }
 
                 responseMessage = $"Subscription {subscriptionId} closed";
-                return true;
+                return (true, responseMessage);
             }
 
-            return false;
+            return (false, null);
         }
         catch (JsonException ex)
         {
@@ -659,7 +661,7 @@ public class WebSocketHandler : IDisposable
                 socketId, message.Length, ex.Message);
 
             responseMessage = CreateNostrErrorResponse($"Invalid JSON: {ex.Message}");
-            return true;
+            return (true, responseMessage);
         }
     }
 
@@ -695,7 +697,7 @@ public class WebSocketHandler : IDisposable
                     continue;
                 }
 
-                var eventObj = _storageService.GetEventByPubkeyAndKind(author, kind);
+                var eventObj = await _storageService.GetEventByPubkeyAndKindAsync(author, kind);
 
                 if (eventObj != null)
                 {

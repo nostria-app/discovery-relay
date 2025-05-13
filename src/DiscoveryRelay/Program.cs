@@ -14,9 +14,30 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.Configure<RelayOptions>(
     builder.Configuration.GetSection(RelayOptions.SectionName));
 
-// Add LMDB options and service
+// Configure storage options
+builder.Services.Configure<StorageOptions>(
+    builder.Configuration.GetSection(StorageOptions.SectionName));
+
+// Add storage options
 builder.Services.Configure<LmdbOptions>(builder.Configuration.GetSection(LmdbOptions.ConfigSection));
-builder.Services.AddSingleton<LmdbStorageService>();
+builder.Services.Configure<AzureBlobOptions>(builder.Configuration.GetSection(AzureBlobOptions.ConfigSection));
+
+// Register storage services conditionally
+var storageProvider = builder.Configuration.GetSection(StorageOptions.SectionName)["Provider"]?.ToLowerInvariant();
+if (storageProvider == "azureblob")
+{
+    builder.Services.AddSingleton<AzureBlobStorageProvider>();
+    builder.Services.AddSingleton<IStorageProvider, AzureBlobStorageProvider>();
+    Console.WriteLine("Configured to use Azure Blob Storage provider");
+}
+else
+{
+    // Default to LMDB
+    builder.Services.AddSingleton<LmdbStorageService>();
+    builder.Services.AddSingleton<LmdbStorageProvider>();
+    builder.Services.AddSingleton<IStorageProvider, LmdbStorageProvider>();
+    Console.WriteLine("Configured to use LMDB Storage provider");
+}
 
 // Add the EventFilterService
 builder.Services.AddSingleton<EventFilterService>();
@@ -140,7 +161,7 @@ apiGroup.MapGet("/status", () =>
 
 apiGroup.MapGet("/stats", (
     WebSocketHandler webSocketHandler,
-    LmdbStorageService storageService,
+    IStorageProvider storageProvider,
     ILogger<Program> logger) =>
 {
     logger.LogInformation("Retrieving relay statistics");
@@ -153,73 +174,73 @@ apiGroup.MapGet("/stats", (
     var response = new StatsResponse(
         DateTime.UtcNow,
         connections,
-        storageService.GetDatabaseStats()
+        storageProvider.GetStorageStatsAsync().Result
     );
 
     return Results.Ok(response);
 });
 
 // Stop database endpoint
-apiGroup.MapGet("/stop", (
+apiGroup.MapGet("/stop", async (
     string key,
-    IOptions<LmdbOptions> options,
-    LmdbStorageService storageService,
+    IOptions<StorageOptions> options,
+    IStorageProvider storageProvider,
     ILogger<Program> logger) =>
 {
     if (string.IsNullOrEmpty(options.Value.ApiAuthenticationGuid))
     {
-        logger.LogWarning("Database control API authentication is not configured. Access denied.");
+        logger.LogWarning("Storage control API authentication is not configured. Access denied.");
         return Results.Unauthorized();
     }
 
     if (string.IsNullOrEmpty(key) || key != options.Value.ApiAuthenticationGuid)
     {
-        logger.LogWarning("Invalid authentication GUID provided for database stop operation");
+        logger.LogWarning("Invalid authentication GUID provided for storage stop operation");
         return Results.Unauthorized();
     }
 
-    logger.LogInformation("Authorized request to stop database received");
-    bool result = storageService.StopDatabase();
+    logger.LogInformation("Authorized request to stop storage service received");
+    bool result = await storageProvider.StopAsync();
 
     if (result)
     {
-        return Results.Ok(new { message = "Database stopped successfully" });
+        return Results.Ok(new { message = "Storage service stopped successfully" });
     }
     else
     {
-        return Results.BadRequest(new { error = "Failed to stop database, may already be stopped" });
+        return Results.BadRequest(new { error = "Failed to stop storage service, may already be stopped" });
     }
 });
 
 // Start database endpoint
-apiGroup.MapGet("/start", (
+apiGroup.MapGet("/start", async (
     string key,
-    IOptions<LmdbOptions> options,
-    LmdbStorageService storageService,
+    IOptions<StorageOptions> options,
+    IStorageProvider storageProvider,
     ILogger<Program> logger) =>
 {
     if (string.IsNullOrEmpty(options.Value.ApiAuthenticationGuid))
     {
-        logger.LogWarning("Database control API authentication is not configured. Access denied.");
+        logger.LogWarning("Storage control API authentication is not configured. Access denied.");
         return Results.Unauthorized();
     }
 
     if (string.IsNullOrEmpty(key) || key != options.Value.ApiAuthenticationGuid)
     {
-        logger.LogWarning("Invalid authentication GUID provided for database start operation");
+        logger.LogWarning("Invalid authentication GUID provided for storage start operation");
         return Results.Unauthorized();
     }
 
-    logger.LogInformation("Authorized request to start database received");
-    bool result = storageService.StartDatabase();
+    logger.LogInformation("Authorized request to start storage service received");
+    bool result = await storageProvider.StartAsync();
 
     if (result)
     {
-        return Results.Ok(new { message = "Database started successfully" });
+        return Results.Ok(new { message = "Storage service started successfully" });
     }
     else
     {
-        return Results.BadRequest(new { error = "Failed to start database, may already be running" });
+        return Results.BadRequest(new { error = "Failed to start storage service, may already be running" });
     }
 });
 
@@ -242,9 +263,9 @@ apiGroup.MapPost("/broadcast", async (
 // Migrated API from DidController
 var didGroup = app.MapGroup("/.well-known/did/nostr");
 
-didGroup.MapGet("{pubkey}.json", (
+didGroup.MapGet("{pubkey}.json", async (
     string pubkey,
-    LmdbStorageService storageService,
+    IStorageProvider storageProvider,
     ILogger<Program> logger) =>
 {
     logger.LogInformation("Retrieving DID document for public key: {PubKey}", pubkey);
@@ -260,10 +281,10 @@ didGroup.MapGet("{pubkey}.json", (
     }
 
     // Try to get the event first from kind 10002, then from kind 3
-    NostrEvent? nostrEvent = storageService.GetEventByPubkeyAndKind(pubkey, 10002);
+    NostrEvent? nostrEvent = await storageProvider.GetEventByPubkeyAndKindAsync(pubkey, 10002);
     if (nostrEvent == null)
     {
-        nostrEvent = storageService.GetEventByPubkeyAndKind(pubkey, 3);
+        nostrEvent = await storageProvider.GetEventByPubkeyAndKindAsync(pubkey, 3);
         if (nostrEvent == null)
         {
             logger.LogWarning("No events found for pubkey: {PubKey}", pubkey);

@@ -17,8 +17,8 @@
     <FileVersion>1.0.4.0</FileVersion>
     <InformationalVersion>1.0.4</InformationalVersion>
   </PropertyGroup>
-
   <ItemGroup>
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.19.1" />
     <PackageReference Include="LightningDB" Version="0.18.0" />
     <PackageReference Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" Version="1.21.0" />
     <PackageReference Include="NBitcoin.Secp256k1" Version="3.1.6" />

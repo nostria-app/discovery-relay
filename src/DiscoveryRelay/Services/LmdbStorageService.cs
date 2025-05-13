@@ -6,7 +6,7 @@ using System.Text.Json;
 
 namespace DiscoveryRelay.Services;
 
-public class LmdbStorageService : IDisposable
+public class LmdbStorageService
 {
     private readonly ILogger<LmdbStorageService> _logger;
     private readonly JsonSerializerOptions _jsonOptions;
@@ -271,7 +271,8 @@ public class LmdbStorageService : IDisposable
             var keyBytes = System.Text.Encoding.UTF8.GetBytes(dbKey);
 
             // If the kind is 3, we will first validate if there is already a kind 10002 event. If there is, we will not store the kind 3 event.
-            if (kind == 3) {
+            if (kind == 3)
+            {
                 var dbKeyRelayList = $"{pubkey}::10002";
                 var keyBytesRelayList = System.Text.Encoding.UTF8.GetBytes(dbKey);
 
