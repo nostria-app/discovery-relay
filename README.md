@@ -86,6 +86,13 @@ When using Managed Identity, make sure your Azure service (App Service, Azure Fu
 
 The container will be automatically created if it doesn't exist.
 
+To run local blob storage:
+
+```sh
+npm install -g azurite
+azurite
+```
+
 ## Kudos
 
 While mostly developed with LLM and own code, some inspiration and copy-paste (like error messages) was done from [Netstr](https://github.com/bezysoftware/netstr).
