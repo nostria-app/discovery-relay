@@ -19,8 +19,7 @@ Also check out: https://medium.com/@sondreb/scaling-nostr-e50276774367
 - Supports only kind 3 and kind 10002 (discovery)
 - LMDB for key-value storage
 
-It is required to specify the authors for events. The relay will not accept queries without authors. While other relays will start returning 
-all events when no authors are specified, this relay will only return events for the specified authors.
+If there is already an kind 10002 event for the same pubkey, the relay will not store an incoming kind 3 event.
 
 ## Kudos
 
