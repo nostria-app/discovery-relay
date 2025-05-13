@@ -58,11 +58,33 @@ For cloud deployments, you can use Azure Blob Storage:
 "AzureBlob": {
   "ConnectionString": "DefaultEndpointsProtocol=https;AccountName=yourstorageaccount;AccountKey=yourstoragekey;EndpointSuffix=core.windows.net",
   "ContainerName": "nostr-events",
-  "StatsIntervalSeconds": 10
+  "StatsIntervalSeconds": 10,
+  "UseManagedIdentity": false,
+  "AccountName": "",
+  "EndpointSuffix": "core.windows.net"
 }
 ```
 
-You must set the `ConnectionString` to your Azure Storage account connection string. The container will be automatically created if it doesn't exist.
+You can authenticate to Azure Blob Storage in two ways:
+
+1. **Connection String**: Set the `ConnectionString` to your Azure Storage account connection string. 
+
+2. **Managed Identity (recommended for Azure deployments)**: For higher security, use Azure Managed Identity by setting:
+
+```json
+"AzureBlob": {
+  "ConnectionString": "",
+  "ContainerName": "nostr-events",
+  "StatsIntervalSeconds": 10,
+  "UseManagedIdentity": true,
+  "AccountName": "yourstorageaccount",
+  "EndpointSuffix": "core.windows.net"
+}
+```
+
+When using Managed Identity, make sure your Azure service (App Service, Azure Functions, VM, etc.) has been assigned a Managed Identity with proper permissions to access the storage account.
+
+The container will be automatically created if it doesn't exist.
 
 ## Kudos
 

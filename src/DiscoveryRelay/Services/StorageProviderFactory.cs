@@ -4,7 +4,8 @@ using Microsoft.Extensions.Options;
 namespace DiscoveryRelay.Services;
 
 /// <summary>
-/// Factory service for creating storage providers
+/// Factory service for creating storage providers - deprecated as services are now registered directly in Program.cs
+/// This class is kept for backward compatibility but may be removed in a future version.
 /// </summary>
 public class StorageProviderFactory
 {
@@ -30,10 +31,10 @@ public class StorageProviderFactory
         switch (_storageOptions.Value.Provider?.ToLowerInvariant())
         {
             case "azureblob":
-                provider = _serviceProvider.GetRequiredService<AzureBlobStorageProvider>();
+                provider = _serviceProvider.GetRequiredService<IStorageProvider>();
                 break;
             default:
-                provider = _serviceProvider.GetRequiredService<LmdbStorageProvider>();
+                provider = _serviceProvider.GetRequiredService<IStorageProvider>();
                 break;
         }
 

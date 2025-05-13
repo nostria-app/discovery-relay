@@ -18,24 +18,32 @@ builder.Services.Configure<RelayOptions>(
 builder.Services.Configure<StorageOptions>(
     builder.Configuration.GetSection(StorageOptions.SectionName));
 
-// Add storage options
+// Register storage services conditionally
+var storageProvider = builder.Configuration.GetSection(StorageOptions.SectionName)["Provider"]?.ToLowerInvariant();
+Console.WriteLine($"Storage provider configured in settings: {storageProvider ?? "not specified, using default"}");
+
+// Always register both provider options since these are just options registrations
 builder.Services.Configure<LmdbOptions>(builder.Configuration.GetSection(LmdbOptions.ConfigSection));
 builder.Services.Configure<AzureBlobOptions>(builder.Configuration.GetSection(AzureBlobOptions.ConfigSection));
 
-// Register storage services conditionally
-var storageProvider = builder.Configuration.GetSection(StorageOptions.SectionName)["Provider"]?.ToLowerInvariant();
 if (storageProvider == "azureblob")
 {
+    // Only register Azure Blob Storage service
     builder.Services.AddSingleton<AzureBlobStorageProvider>();
-    builder.Services.AddSingleton<IStorageProvider, AzureBlobStorageProvider>();
+    builder.Services.AddSingleton<IStorageProvider>(sp => sp.GetRequiredService<AzureBlobStorageProvider>());
     Console.WriteLine("Configured to use Azure Blob Storage provider");
+
+    // Check if using Managed Identity
+    var useManagedIdentity = builder.Configuration.GetSection(AzureBlobOptions.ConfigSection)["UseManagedIdentity"]?.ToLowerInvariant() == "true";
+    var accountName = builder.Configuration.GetSection(AzureBlobOptions.ConfigSection)["AccountName"];
+    Console.WriteLine($"Azure Blob Storage using Managed Identity: {useManagedIdentity}, Account: {accountName ?? "not specified"}");
 }
 else
 {
     // Default to LMDB
     builder.Services.AddSingleton<LmdbStorageService>();
     builder.Services.AddSingleton<LmdbStorageProvider>();
-    builder.Services.AddSingleton<IStorageProvider, LmdbStorageProvider>();
+    builder.Services.AddSingleton<IStorageProvider>(sp => sp.GetRequiredService<LmdbStorageProvider>());
     Console.WriteLine("Configured to use LMDB Storage provider");
 }
 

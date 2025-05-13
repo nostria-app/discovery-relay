@@ -1,4 +1,5 @@
 using Azure;
+using Azure.Identity;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using DiscoveryRelay.Models;
@@ -17,8 +18,8 @@ public class AzureBlobStorageProvider : IStorageProvider
 {
     private readonly ILogger<AzureBlobStorageProvider> _logger;
     private readonly JsonSerializerOptions _jsonOptions;
-    private BlobServiceClient _blobServiceClient;
-    private BlobContainerClient _containerClient;
+    private BlobServiceClient? _blobServiceClient;
+    private BlobContainerClient? _containerClient;
     private readonly string _containerName;
     private bool _disposed = false;
     private bool _isStopped = false;
@@ -93,17 +94,34 @@ public class AzureBlobStorageProvider : IStorageProvider
         _logger.LogInformation("Azure Blob Write Stats: {WritesPerInterval} writes in {IntervalSeconds} seconds ({WritesPerSecond:F2} writes/sec), Total: {TotalWrites}",
             writesPerInterval, _statsIntervalSeconds, writesPerSecond, currentCount);
     }
-
     private void Initialize()
     {
         try
         {
-            if (string.IsNullOrEmpty(_options.Value.ConnectionString))
+            if (_options.Value.UseManagedIdentity)
             {
-                throw new ArgumentException("Azure Blob Storage connection string is not configured");
+                if (string.IsNullOrEmpty(_options.Value.AccountName))
+                {
+                    throw new ArgumentException("Azure Blob Storage account name is required when using Managed Identity");
+                }
+
+                _logger.LogInformation("Initializing Azure Blob Storage with Managed Identity for account {AccountName}", _options.Value.AccountName);
+
+                // Create the service client using DefaultAzureCredential (which supports Managed Identity)
+                var endpoint = new Uri($"https://{_options.Value.AccountName}.blob.{_options.Value.EndpointSuffix}");
+                _blobServiceClient = new BlobServiceClient(endpoint, new Azure.Identity.DefaultAzureCredential());
+            }
+            else
+            {
+                if (string.IsNullOrEmpty(_options.Value.ConnectionString))
+                {
+                    throw new ArgumentException("Azure Blob Storage connection string is not configured");
+                }
+
+                _logger.LogInformation("Initializing Azure Blob Storage with connection string");
+                _blobServiceClient = new BlobServiceClient(_options.Value.ConnectionString);
             }
 
-            _blobServiceClient = new BlobServiceClient(_options.Value.ConnectionString);
             _containerClient = _blobServiceClient.GetBlobContainerClient(_containerName);
 
             // Create the container if it doesn't exist
@@ -509,6 +527,16 @@ public class AzureBlobStorageProvider : IStorageProvider
             stats["recentEvents"] = await GetRecentEventsAsync(10);
             stats["containerName"] = _containerName;
             stats["provider"] = "AzureBlobStorage";
+
+            if (_options.Value.UseManagedIdentity)
+            {
+                stats["authType"] = "ManagedIdentity";
+                stats["accountName"] = _options.Value.AccountName;
+            }
+            else
+            {
+                stats["authType"] = "ConnectionString";
+            }
 
             return stats;
         }
