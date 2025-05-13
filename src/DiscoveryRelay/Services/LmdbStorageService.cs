@@ -270,6 +270,19 @@ public class LmdbStorageService : IDisposable
             var dbKey = $"{pubkey}::{kind}";
             var keyBytes = System.Text.Encoding.UTF8.GetBytes(dbKey);
 
+            // If the kind is 3, we will first validate if there is already a kind 10002 event. If there is, we will not store the kind 3 event.
+            if (kind == 3) {
+                var dbKeyRelayList = $"{pubkey}::10002";
+                var keyBytesRelayList = System.Text.Encoding.UTF8.GetBytes(dbKey);
+
+                if (tx.TryGet(eventsDb, keyBytesRelayList, out var _))
+                {
+                    // There is already a kind 10002 event, so we will not store the kind 3 event.
+                    _logger.LogInformation("Found existing event for {Pubkey} and kind 3: Skipping saving kind 10002.", pubkey);
+                    return false;
+                }
+            }
+
             // Check if an event with this key already exists
             if (tx.TryGet(eventsDb, keyBytes, out var existingValueBytes))
             {

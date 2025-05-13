@@ -12,7 +12,7 @@ services:
       Relay__PrivacyPolicy: ""
       Relay__PostingPolicy: ""
       Lmdb__DatabasePath: 'data'
-      Lmdb__SizeInGb: 1
+      Lmdb__SizeInMb: 1024
       Lmdb__MaxReaders: 4096
       ASPNETCORE_ENVIRONMENT: Production
     volumes:

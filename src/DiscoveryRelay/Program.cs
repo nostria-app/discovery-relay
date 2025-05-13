@@ -223,10 +223,6 @@ apiGroup.MapGet("/start", (
     }
 });
 
-
-
-
-
 apiGroup.MapPost("/broadcast", async (
     BroadcastRequest request,
     WebSocketHandler webSocketHandler,
