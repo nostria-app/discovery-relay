@@ -266,14 +266,14 @@ public class LmdbStorageService
             var pubkey = nostrEvent.PubKey;
             var kind = nostrEvent.Kind;
 
-            // Create key in format PUBKEY::KIND
-            var dbKey = $"{pubkey}::{kind}";
+            // Create key in format PUBKEY__KIND
+            var dbKey = $"{pubkey}__{kind}";
             var keyBytes = System.Text.Encoding.UTF8.GetBytes(dbKey);
 
             // If the kind is 3, we will first validate if there is already a kind 10002 event. If there is, we will not store the kind 3 event.
             if (kind == 3)
             {
-                var dbKeyRelayList = $"{pubkey}::10002";
+                var dbKeyRelayList = $"{pubkey}__10002";
                 var keyBytesRelayList = System.Text.Encoding.UTF8.GetBytes(dbKey);
 
                 if (tx.TryGet(eventsDb, keyBytesRelayList, out var _))
@@ -370,8 +370,8 @@ public class LmdbStorageService
             using var tx = _env.BeginTransaction(TransactionBeginFlags.ReadOnly);
             using var db = tx.OpenDatabase(EventsDbName);
 
-            // Look up using pubkey::kind format
-            var dbKey = $"{pubkey}::{kind}";
+            // Look up using pubkey__kind format
+            var dbKey = $"{pubkey}__{kind}";
             var keyBytes = System.Text.Encoding.UTF8.GetBytes(dbKey);
 
             if (tx.TryGet(db, keyBytes, out var valueBytes))

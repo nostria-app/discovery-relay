@@ -33,7 +33,7 @@ public class AzureBlobStorageProvider : IStorageProvider
     private Timer _statsTimer;
     private readonly int _statsIntervalSeconds;
 
-    // Cache for recently accessed events (key format: "pubkey::kind")
+    // Cache for recently accessed events (key format: "pubkey__kind")
     private readonly ConcurrentDictionary<string, NostrEvent> _eventCache = new();
 
     public AzureBlobStorageProvider(ILogger<AzureBlobStorageProvider> logger, IOptions<AzureBlobOptions> options)
@@ -249,13 +249,13 @@ public class AzureBlobStorageProvider : IStorageProvider
 
         try
         {
-            // Create blob name using PUBKEY::KIND format
-            string blobName = $"{pubkey}::{kind}";
+            // Create blob name using PUBKEY_KIND format
+            string blobName = $"{pubkey}__{kind}";
 
             // If the kind is 3, check if there is already a kind 10002 event
             if (kind == 3)
             {
-                string relayListBlobName = $"{pubkey}::10002";
+                string relayListBlobName = $"{pubkey}__10002";
                 if (await BlobExistsAsync(relayListBlobName))
                 {
                     _logger.LogDebug("Found existing event for {Pubkey} and kind 10002: Skipping saving kind 3 event.", pubkey);
@@ -339,7 +339,7 @@ public class AzureBlobStorageProvider : IStorageProvider
 
         try
         {
-            string blobName = $"{pubkey}::{kind}";
+            string blobName = $"{pubkey}__{kind}";
 
             // Check cache first
             if (_eventCache.TryGetValue(blobName, out var cachedEvent))
@@ -422,7 +422,7 @@ public class AzureBlobStorageProvider : IStorageProvider
             await foreach (BlobItem blobItem in _containerClient.GetBlobsAsync())
             {
                 string blobName = blobItem.Name;
-                string[] parts = blobName.Split("::");
+                string[] parts = blobName.Split("__");
 
                 if (parts.Length == 2 && int.TryParse(parts[1], out int kind))
                 {
