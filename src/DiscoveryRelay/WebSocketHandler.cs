@@ -633,20 +633,34 @@ public class WebSocketHandler : IDisposable
 
                     if (subscriptions.Count == 0)
                     {
-                        _logger.LogInformation("Client {SocketId} has no more subscriptions, will disconnect", socketId);
-                        Task.Run(async () =>
+                        _logger.LogInformation("Client {SocketId} has no more subscriptions, will disconnect after 5 minutes if no new subscriptions are created", socketId);
+
+                        // Store the time when the client ran out of subscriptions
+                        if (!_lastMeaningfulActivity.TryGetValue(socketId, out _))
                         {
-                            await Task.Delay(500);
-                            if (_sockets.TryGetValue(socketId, out var webSocket) &&
-                                webSocket.State == WebSocketState.Open)
-                            {
-                                await webSocket.CloseAsync(
-                                    WebSocketCloseStatus.NormalClosure,
-                                    "No active subscriptions",
-                                    CancellationToken.None);
-                            }
-                        });
+                            _lastMeaningfulActivity[socketId] = DateTime.UtcNow;
+                        }
+
+                        // Don't immediately disconnect - the idle connection check will handle this
+                        // The existing CheckIdleConnections method will disconnect after DisconnectTimeoutMinutes (default 5)
                     }
+
+                    // if (subscriptions.Count == 0)
+                    // {
+                    //     _logger.LogInformation("Client {SocketId} has no more subscriptions, will disconnect", socketId);
+                    //     Task.Run(async () =>
+                    //     {
+                    //         await Task.Delay(500);
+                    //         if (_sockets.TryGetValue(socketId, out var webSocket) &&
+                    //             webSocket.State == WebSocketState.Open)
+                    //         {
+                    //             await webSocket.CloseAsync(
+                    //                 WebSocketCloseStatus.NormalClosure,
+                    //                 "No active subscriptions",
+                    //                 CancellationToken.None);
+                    //         }
+                    //     });
+                    // }
                 }
 
                 responseMessage = $"Subscription {subscriptionId} closed";

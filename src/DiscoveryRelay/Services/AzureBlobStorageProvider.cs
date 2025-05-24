@@ -596,12 +596,16 @@ public class AzureBlobStorageProvider : IStorageProvider
 
     private async Task<long> CountBlobsAsync()
     {
-        long count = 0;
-        await foreach (var _ in _containerClient.GetBlobsAsync())
-        {
-            count++;
-        }
-        return count;
+        // Unfortunately there are no good way to count blobs in Azure Blob Storage without iterating through them. So for now
+        // we'll not do it anymore.
+        return 0;
+
+        //long count = 0;
+        //await foreach (var _ in _containerClient.GetBlobsAsync())
+        //{
+        //    count++;
+        //}
+        //return count;
     }
     #endregion
 
