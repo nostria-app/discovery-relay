@@ -174,7 +174,7 @@ apiGroup.MapGet("/stats", (
 {
     logger.LogInformation("Retrieving relay statistics");
 
-    var connections = new ConnectionInfo(
+    var connections = new DiscoveryRelay.Models.ConnectionInfo(
         webSocketHandler.GetActiveConnectionCount(),
         webSocketHandler.GetTotalSubscriptionCount()
     );
