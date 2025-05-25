@@ -35,17 +35,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}, ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Get latest image digest
+        id: get-latest-image
+        run: |
+          IMAGE_WITH_REGISTRY="${{ env.REGISTRY }}/${{ github.repository_owner }}/discovery-relay"
+          DIGEST=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/orgs/${{ github.repository_owner }}/packages/container/discovery-relay/versions" \
+            | jq -r '[.[] | select(.metadata.container.tags[] | contains("latest"))] | .[0].name')
+          FULL_IMAGE_PATH="${IMAGE_WITH_REGISTRY}@${DIGEST}"
+          echo "FULL_IMAGE_PATH=${FULL_IMAGE_PATH}" >> $GITHUB_ENV
+          echo "Using image: ${FULL_IMAGE_PATH}"
 
       - name: Log in to Azure
         uses: azure/login@v1
@@ -56,7 +55,7 @@ jobs:
         uses: azure/webapps-deploy@v2
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          images: ${{ env.FULL_IMAGE_PATH }}
 
       - name: Azure logout
         run: |
