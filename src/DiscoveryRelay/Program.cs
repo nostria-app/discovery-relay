@@ -177,7 +177,18 @@ app.UseDefaultFiles(new DefaultFilesOptions
 {
     DefaultFileNames = new List<string> { "index.html" }
 });
-app.UseStaticFiles();
+
+// Configure static files with no-cache headers
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        // Disable caching for all static files
+        ctx.Context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+        ctx.Context.Response.Headers.Pragma = "no-cache";
+        ctx.Context.Response.Headers.Expires = "0";
+    }
+});
 
 // Migrated API from HomeController
 var apiGroup = app.MapGroup("/api");
@@ -347,7 +358,16 @@ todosApi.MapGet("/{id}", (int id) =>
         : Results.NotFound());
 
 // Make sure the fallback comes AFTER all API routes are registered
-app.MapFallbackToFile("index.html");
+app.MapFallbackToFile("index.html", new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        // Disable caching for fallback files too
+        ctx.Context.Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+        ctx.Context.Response.Headers["Pragma"] = "no-cache";
+        ctx.Context.Response.Headers["Expires"] = "0";
+    }
+});
 
 // Helper methods migrated from DidController
 bool ValidateHexPubkey(string pubkey)
