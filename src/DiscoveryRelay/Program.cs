@@ -81,7 +81,7 @@ builder.Services.AddHostedService<WebSocketBackgroundService>();
 // Configure JSON serialization using source generation to avoid reflection
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
-    options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonSerializerContext.Default);
+    // Use only NostrSerializationContext to avoid conflicts with duplicate types
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, NostrSerializationContext.Default);
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
@@ -445,16 +445,7 @@ public class BroadcastRequest
 public record Todo(int Id, string? Title, DateOnly? DueBy = null, bool IsComplete = false);
 
 [JsonSerializable(typeof(Todo[]))]
+[JsonSerializable(typeof(Todo))]
 internal partial class AppJsonSerializerContext : JsonSerializerContext
 {
 }
-
-public record VersionResponse(string Version);
-
-public record StatusResponse(string Status, DateTime Timestamp);
-
-public record ConnectionInfo(int ActiveConnections, int TotalSubscriptions);
-
-public record StatsResponse(DateTime Timestamp, ConnectionInfo Connections, object DatabaseStats);
-
-public record ErrorResponse(string Error);

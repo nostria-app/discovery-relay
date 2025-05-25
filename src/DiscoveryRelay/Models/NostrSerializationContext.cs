@@ -29,6 +29,9 @@ namespace DiscoveryRelay.Models;
 [JsonSerializable(typeof(ConnectionInfo))]
 [JsonSerializable(typeof(BroadcastResponse))]
 [JsonSerializable(typeof(ErrorResponse))]
+// Add Todo serialization support
+[JsonSerializable(typeof(Todo))]
+[JsonSerializable(typeof(Todo[]))]
 internal partial class NostrSerializationContext : JsonSerializerContext
 {
 }
@@ -37,6 +40,7 @@ internal partial class NostrSerializationContext : JsonSerializerContext
 public record VersionResponse(string Version);
 public record StatusResponse(string Status, DateTime Timestamp);
 public record ConnectionInfo(int ActiveConnections, int TotalSubscriptions);
-public record StatsResponse(DateTime Timestamp, ConnectionInfo Connections, Dictionary<string, object> Database);
+public record StatsResponse(DateTime Timestamp, ConnectionInfo Connections, object DatabaseStats);
 public record BroadcastResponse(bool Success);
 public record ErrorResponse(string Error);
+public record Todo(int Id, string? Title, DateOnly? DueBy = null, bool IsComplete = false);

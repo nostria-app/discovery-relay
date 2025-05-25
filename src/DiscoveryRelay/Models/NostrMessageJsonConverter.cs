@@ -22,7 +22,7 @@ public class NostrMessageJsonConverter : JsonConverter<NostrMessage>
         }
 
         var messageType = reader.GetString();
-        
+
         switch (messageType?.ToUpper())
         {
             case "REQ":
@@ -39,7 +39,7 @@ public class NostrMessageJsonConverter : JsonConverter<NostrMessage>
     private NostrReqMessage ReadReqMessage(ref Utf8JsonReader reader, JsonSerializerOptions options)
     {
         var message = new NostrReqMessage();
-        
+
         // Read subscription ID
         reader.Read();
         if (reader.TokenType == JsonTokenType.String)
@@ -55,20 +55,21 @@ public class NostrMessageJsonConverter : JsonConverter<NostrMessage>
         reader.Read();
         if (reader.TokenType == JsonTokenType.StartObject)
         {
-            message.Filter = JsonSerializer.Deserialize<Dictionary<string, object>>(ref reader, options) ?? 
+            // Use source-generated serialization context for Dictionary<string, object>
+            message.Filter = JsonSerializer.Deserialize(ref reader, NostrSerializationContext.Default.DictionaryStringObject) ??
                              new Dictionary<string, object>();
         }
-        
+
         // Skip to end of array
         SkipToEndOfArray(ref reader);
-        
+
         return message;
     }
 
     private NostrCloseMessage ReadCloseMessage(ref Utf8JsonReader reader, JsonSerializerOptions options)
     {
         var message = new NostrCloseMessage();
-        
+
         // Read subscription ID
         reader.Read();
         if (reader.TokenType == JsonTokenType.String)
@@ -79,10 +80,10 @@ public class NostrMessageJsonConverter : JsonConverter<NostrMessage>
         {
             throw new JsonException("Expected subscription ID string");
         }
-        
+
         // Skip to end of array
         SkipToEndOfArray(ref reader);
-        
+
         return message;
     }
 
