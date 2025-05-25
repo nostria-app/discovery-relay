@@ -112,43 +112,49 @@ app.UseRouting();
 // CORS middleware must be after UseRouting but before endpoints
 app.UseCors();
 
-// Create a dedicated NIP-11 middleware that handles ONLY the NIP-11 information document requests
-app.Map("/", async context =>
+// NIP-11 middleware - handle Nostr relay information document requests BEFORE static files
+app.Use(async (context, next) =>
 {
-    // Check for NIP-11 specific Accept header or query parameter
-    string acceptHeader = context.Request.Headers.Accept.ToString();
-    bool isNostrInfoRequest =
-        acceptHeader.Contains("application/nostr+json") ||
-        context.Request.Query.ContainsKey("nostr");
-
-    if (isNostrInfoRequest)
+    if (context.Request.Path == "/")
     {
-        var relayOptions = context.RequestServices.GetRequiredService<IOptions<RelayOptions>>().Value;
+        // Check for NIP-11 specific Accept header or query parameter
+        string acceptHeader = context.Request.Headers.Accept.ToString();
+        bool isNostrInfoRequest =
+            acceptHeader.Contains("application/nostr+json") ||
+            context.Request.Query.ContainsKey("nostr");
 
-        var relayInfo = new NostrRelayInfo
+        if (isNostrInfoRequest)
         {
-            Name = relayOptions.Name,
-            Description = relayOptions.Description,
-            Banner = relayOptions.Banner,
-            Icon = relayOptions.Icon,
-            Pubkey = relayOptions.Pubkey,
-            Contact = relayOptions.Contact,
-            SupportedNips = relayOptions.SupportedNips,
-            Software = relayOptions.Software,
-            Version = VersionInfo.GetCurrentVersion(),
-            PrivacyPolicy = relayOptions.PrivacyPolicy,
-            PostingPolicy = relayOptions.PostingPolicy,
-            TermsOfService = relayOptions.TermsOfService
-        };
+            var relayOptions = context.RequestServices.GetRequiredService<IOptions<RelayOptions>>().Value;
 
-        // Set proper content type and cache control headers
-        context.Response.ContentType = "application/nostr+json";
-        context.Response.Headers["Access-Control-Allow-Origin"] = "*";
-        context.Response.Headers["Cache-Control"] = "no-cache";
+            var relayInfo = new NostrRelayInfo
+            {
+                Name = relayOptions.Name,
+                Description = relayOptions.Description,
+                Banner = relayOptions.Banner,
+                Icon = relayOptions.Icon,
+                Pubkey = relayOptions.Pubkey,
+                Contact = relayOptions.Contact,
+                SupportedNips = relayOptions.SupportedNips,
+                Software = relayOptions.Software,
+                Version = VersionInfo.GetCurrentVersion(),
+                PrivacyPolicy = relayOptions.PrivacyPolicy,
+                PostingPolicy = relayOptions.PostingPolicy,
+                TermsOfService = relayOptions.TermsOfService
+            };
 
-        await context.Response.WriteAsJsonAsync(relayInfo, NostrSerializationContext.Default.NostrRelayInfo);
-        return;
+            // Set proper content type and cache control headers
+            context.Response.ContentType = "application/nostr+json";
+            context.Response.Headers["Access-Control-Allow-Origin"] = "*";
+            context.Response.Headers["Cache-Control"] = "no-cache";
+
+            await context.Response.WriteAsJsonAsync(relayInfo, NostrSerializationContext.Default.NostrRelayInfo);
+            return; // Don't call next() - we handled the request
+        }
     }
+
+    // Continue with the pipeline for requests that are not NIP-11
+    await next();
 });
 
 // WebSocket handling middleware
