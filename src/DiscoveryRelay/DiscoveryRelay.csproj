@@ -12,10 +12,10 @@
     <!-- Enable hot reload -->
     <WatchEnable>true</WatchEnable>
     <!-- Add these properties to set version information -->
-    <Version>1.0.7</Version>
-    <AssemblyVersion>1.0.7.0</AssemblyVersion>
-    <FileVersion>1.0.7.0</FileVersion>
-    <InformationalVersion>1.0.7</InformationalVersion>
+    <Version>1.0.8</Version>
+    <AssemblyVersion>1.0.8.0</AssemblyVersion>
+    <FileVersion>1.0.8.0</FileVersion>
+    <InformationalVersion>1.0.8</InformationalVersion>
     <UserSecretsId>8af606b9-16af-4637-8ec8-4cbb8a017e93</UserSecretsId>
   </PropertyGroup>  <ItemGroup>
     <PackageReference Include="Azure.Identity" Version="1.13.2" />
