@@ -55,8 +55,8 @@ public class NostrMessageJsonConverter : JsonConverter<NostrMessage>
         reader.Read();
         if (reader.TokenType == JsonTokenType.StartObject)
         {
-            // Use source-generated serialization context for Dictionary<string, object>
-            message.Filter = JsonSerializer.Deserialize(ref reader, NostrSerializationContext.Default.DictionaryStringObject) ??
+            // Support both source-generated and runtime deserialization
+            message.Filter = JsonSerializer.Deserialize<Dictionary<string, object>>(ref reader, options) ??
                              new Dictionary<string, object>();
         }
 

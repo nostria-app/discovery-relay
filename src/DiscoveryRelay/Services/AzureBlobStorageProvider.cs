@@ -45,8 +45,8 @@ public class AzureBlobStorageProvider : IStorageProvider
         _jsonOptions = new JsonSerializerOptions
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            WriteIndented = false,
-            TypeInfoResolver = NostrSerializationContext.Default
+            PropertyNameCaseInsensitive = true,
+            WriteIndented = false
         };
 
         // Set statistics logging interval (default to 10 seconds if not specified)
@@ -289,7 +289,7 @@ public class AzureBlobStorageProvider : IStorageProvider
             }
 
             // Serialize and store the new event
-            string json = JsonSerializer.Serialize(nostrEvent, NostrSerializationContext.Default.NostrEvent);
+            string json = JsonSerializer.Serialize(nostrEvent, _jsonOptions);
             _logger.LogDebug("Serialized event JSON: {EventJson}", json);
 
             await UploadBlobAsync(blobName, json);
@@ -577,7 +577,7 @@ public class AzureBlobStorageProvider : IStorageProvider
             BlobDownloadResult downloadResult = await blobClient.DownloadContentAsync();
             string content = downloadResult.Content.ToString();
 
-            return JsonSerializer.Deserialize(content, NostrSerializationContext.Default.NostrEvent);
+            return JsonSerializer.Deserialize<NostrEvent>(content, _jsonOptions);
         }
         catch (Exception ex)
         {

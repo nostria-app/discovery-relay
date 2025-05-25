@@ -78,11 +78,16 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSingleton<WebSocketHandler>();
 builder.Services.AddHostedService<WebSocketBackgroundService>();
 
-// Configure JSON serialization using source generation to avoid reflection
+// Configure JSON serialization to be more dynamic (no source generation dependency)
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
-    // Use only NostrSerializationContext to avoid conflicts with duplicate types
+    // Add NostrSerializationContext but don't make it the only resolver
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, NostrSerializationContext.Default);
+
+    // Enable more dynamic serialization
+    options.SerializerOptions.PropertyNameCaseInsensitive = true;
+
+    // Use non-generic JsonStringEnumConverter instead
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
     options.SerializerOptions.Converters.Add(new TodoJsonConverter()); // Add the custom Todo converter
 });
@@ -107,57 +112,66 @@ app.UseRouting();
 // CORS middleware must be after UseRouting but before endpoints
 app.UseCors();
 
-// Enable static files with proper defaults
-app.UseDefaultFiles(new DefaultFilesOptions
+// Create a dedicated NIP-11 middleware that handles ONLY the NIP-11 information document requests
+app.Map("/", async context =>
 {
-    DefaultFileNames = new List<string> { "index.html" }
-});
-app.UseStaticFiles();
+    // Check for NIP-11 specific Accept header or query parameter
+    string acceptHeader = context.Request.Headers.Accept.ToString();
+    bool isNostrInfoRequest =
+        acceptHeader.Contains("application/nostr+json") ||
+        context.Request.Query.ContainsKey("nostr");
 
-// Use a dedicated middleware for handling various request types at the root path
+    if (isNostrInfoRequest)
+    {
+        var relayOptions = context.RequestServices.GetRequiredService<IOptions<RelayOptions>>().Value;
+
+        var relayInfo = new NostrRelayInfo
+        {
+            Name = relayOptions.Name,
+            Description = relayOptions.Description,
+            Banner = relayOptions.Banner,
+            Icon = relayOptions.Icon,
+            Pubkey = relayOptions.Pubkey,
+            Contact = relayOptions.Contact,
+            SupportedNips = relayOptions.SupportedNips,
+            Software = relayOptions.Software,
+            Version = VersionInfo.GetCurrentVersion(),
+            PrivacyPolicy = relayOptions.PrivacyPolicy,
+            PostingPolicy = relayOptions.PostingPolicy,
+            TermsOfService = relayOptions.TermsOfService
+        };
+
+        // Set proper content type and cache control headers
+        context.Response.ContentType = "application/nostr+json";
+        context.Response.Headers["Access-Control-Allow-Origin"] = "*";
+        context.Response.Headers["Cache-Control"] = "no-cache";
+
+        await context.Response.WriteAsJsonAsync(relayInfo, NostrSerializationContext.Default.NostrRelayInfo);
+        return;
+    }
+});
+
+// WebSocket handling middleware
 app.Use(async (context, next) =>
 {
-    if (context.Request.Path == "/")
+    if (context.Request.Path == "/" && context.WebSockets.IsWebSocketRequest)
     {
-        // Handle NIP-11 requests
-        string acceptHeader = context.Request.Headers.Accept.ToString();
-        if (acceptHeader.Contains("application/nostr+json") || context.Request.Query.ContainsKey("nostr"))
-        {
-            var relayOptions = context.RequestServices.GetRequiredService<IOptions<RelayOptions>>().Value;
-
-            var relayInfo = new NostrRelayInfo
-            {
-                Name = relayOptions.Name,
-                Description = relayOptions.Description,
-                Banner = relayOptions.Banner,
-                Icon = relayOptions.Icon,
-                Pubkey = relayOptions.Pubkey,
-                Contact = relayOptions.Contact,
-                SupportedNips = relayOptions.SupportedNips,
-                Software = relayOptions.Software,
-                Version = VersionInfo.GetCurrentVersion(),
-                PrivacyPolicy = relayOptions.PrivacyPolicy,
-                PostingPolicy = relayOptions.PostingPolicy,
-                TermsOfService = relayOptions.TermsOfService
-            };
-
-            context.Response.ContentType = "application/nostr+json";
-            await context.Response.WriteAsJsonAsync(relayInfo, NostrSerializationContext.Default.NostrRelayInfo);
-            return;
-        }
-        // Handle WebSocket requests
-        else if (context.WebSockets.IsWebSocketRequest)
-        {
-            var webSocket = await context.WebSockets.AcceptWebSocketAsync();
-            var handler = context.RequestServices.GetRequiredService<WebSocketHandler>();
-            await handler.HandleWebSocketAsync(context, webSocket);
-            return;
-        }
+        var webSocket = await context.WebSockets.AcceptWebSocketAsync();
+        var handler = context.RequestServices.GetRequiredService<WebSocketHandler>();
+        await handler.HandleWebSocketAsync(context, webSocket);
+        return;
     }
 
     // Continue with the pipeline for all other requests
     await next();
 });
+
+// Enable static files with proper defaults - must come AFTER our custom middleware
+app.UseDefaultFiles(new DefaultFilesOptions
+{
+    DefaultFileNames = new List<string> { "index.html" }
+});
+app.UseStaticFiles();
 
 // Migrated API from HomeController
 var apiGroup = app.MapGroup("/api");
@@ -376,8 +390,11 @@ DidNostrDocument BuildDidDocument(string pubkey, NostrEvent nostrEvent)
         {
             if (nostrEvent.Content != "")
             {
-                // In kind 3, relays are in the content as JSON
-                var relayDict = JsonSerializer.Deserialize<Dictionary<string, object>>(nostrEvent.Content);
+                // Replace regular deserialization with source-generated version
+                var relayDict = JsonSerializer.Deserialize(
+                    nostrEvent.Content,
+                    NostrSerializationContext.Default.DictionaryStringObject);
+
                 if (relayDict != null)
                 {
                     int relayIndex = 1;

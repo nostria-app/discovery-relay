@@ -6,9 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <InvariantGlobalization>true</InvariantGlobalization>
     <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
-    <!-- Disable AOT during development -->
-    <PublishAot Condition="'$(Configuration)' != 'Release'">false</PublishAot>
-    <PublishAot Condition="'$(Configuration)' == 'Release'">true</PublishAot>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
     <!-- Enable hot reload -->
     <WatchEnable>true</WatchEnable>
     <!-- Add these properties to set version information -->

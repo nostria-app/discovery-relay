@@ -445,7 +445,8 @@ public class WebSocketHandler : IDisposable
                     var eventJson = jsonDocument.RootElement[1].GetRawText();
                     _logger.LogDebug("Raw event JSON: {EventJson}", eventJson);
 
-                    var nostrEvent = JsonSerializer.Deserialize<NostrEvent>(eventJson, _jsonOptions);
+                    // Replace with source-generated deserialization
+                    var nostrEvent = JsonSerializer.Deserialize<NostrEvent>(eventJson, NostrSerializationContext.Default.NostrEvent);
 
                     if (nostrEvent == null)
                     {

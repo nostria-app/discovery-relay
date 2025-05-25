@@ -36,8 +36,8 @@ public class LmdbStorageService
         _jsonOptions = new JsonSerializerOptions
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            WriteIndented = false,
-            TypeInfoResolver = NostrSerializationContext.Default
+            PropertyNameCaseInsensitive = true,
+            WriteIndented = false
         };
 
         if (options.Value.SizeInMb > 0)
@@ -291,7 +291,7 @@ public class LmdbStorageService
                 var existingJson = System.Text.Encoding.UTF8.GetString(existingValueBytes);
                 _logger.LogDebug("Found existing event for {Pubkey} and kind {Kind}: {ExistingJson}", pubkey, kind, existingJson);
 
-                var existingEvent = JsonSerializer.Deserialize(existingJson, NostrSerializationContext.Default.NostrEvent);
+                var existingEvent = JsonSerializer.Deserialize<NostrEvent>(existingJson, _jsonOptions);
 
                 // Only update if the new event has a more recent CreatedAt timestamp
                 if (existingEvent != null && nostrEvent.CreatedAt <= existingEvent.CreatedAt)
@@ -313,7 +313,7 @@ public class LmdbStorageService
             }
 
             // Serialize and store the new event
-            var value = JsonSerializer.Serialize(nostrEvent, NostrSerializationContext.Default.NostrEvent);
+            var value = JsonSerializer.Serialize(nostrEvent, _jsonOptions);
             _logger.LogDebug("Serialized event JSON: {EventJson}", value);
 
             var valueBytes = System.Text.Encoding.UTF8.GetBytes(value);
@@ -377,7 +377,7 @@ public class LmdbStorageService
             if (tx.TryGet(db, keyBytes, out var valueBytes))
             {
                 var json = System.Text.Encoding.UTF8.GetString(valueBytes);
-                var nostrEvent = JsonSerializer.Deserialize(json, NostrSerializationContext.Default.NostrEvent);
+                var nostrEvent = JsonSerializer.Deserialize<NostrEvent>(json, _jsonOptions);
 
                 return nostrEvent;
             }

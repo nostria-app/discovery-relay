@@ -6,6 +6,7 @@ namespace DiscoveryRelay.Models;
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     WriteIndented = false,
+    PropertyNameCaseInsensitive = true,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(NostrMessage))]
 [JsonSerializable(typeof(NostrReqMessage))]
@@ -32,8 +33,25 @@ namespace DiscoveryRelay.Models;
 // Add Todo serialization support
 [JsonSerializable(typeof(Todo))]
 [JsonSerializable(typeof(Todo[]))]
+// Add needed types for dynamic compilation
+[JsonSerializable(typeof(string[]))]
+[JsonSerializable(typeof(Dictionary<string, string>))]
+[JsonSerializable(typeof(Dictionary<string, int>))]
+[JsonSerializable(typeof(Dictionary<int, int>))]
+[JsonSerializable(typeof(List<NostrEvent>))]
 internal partial class NostrSerializationContext : JsonSerializerContext
 {
+    // Static method to create default JSON options that can be used throughout the app
+    public static System.Text.Json.JsonSerializerOptions GetDefaultOptions()
+    {
+        return new System.Text.Json.JsonSerializerOptions
+        {
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+            PropertyNameCaseInsensitive = true,
+            WriteIndented = false,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        };
+    }
 }
 
 // Model classes for API responses
