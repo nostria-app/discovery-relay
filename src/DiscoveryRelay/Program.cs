@@ -84,6 +84,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     // Use only NostrSerializationContext to avoid conflicts with duplicate types
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, NostrSerializationContext.Default);
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    options.SerializerOptions.Converters.Add(new TodoJsonConverter()); // Add the custom Todo converter
 });
 
 var app = builder.Build();
@@ -311,11 +312,11 @@ didGroup.MapGet("{pubkey}.json", async (
 });
 
 var sampleTodos = new Todo[] {
-    new(1, "Walk the dog"),
-    new(2, "Do the dishes", DateOnly.FromDateTime(DateTime.Now)),
-    new(3, "Do the laundry", DateOnly.FromDateTime(DateTime.Now.AddDays(1))),
-    new(4, "Clean the bathroom"),
-    new(5, "Clean the car", DateOnly.FromDateTime(DateTime.Now.AddDays(2)))
+    new Todo(1, "Walk the dog"),
+    new Todo(2, "Do the dishes", DateOnly.FromDateTime(DateTime.Now)),
+    new Todo(3, "Do the laundry", DateOnly.FromDateTime(DateTime.Now.AddDays(1))),
+    new Todo(4, "Clean the bathroom"),
+    new Todo(5, "Clean the car", DateOnly.FromDateTime(DateTime.Now.AddDays(2)))
 };
 
 var todosApi = app.MapGroup("/todos");
@@ -440,12 +441,4 @@ app.Run();
 public class BroadcastRequest
 {
     public string? Message { get; set; }
-}
-
-public record Todo(int Id, string? Title, DateOnly? DueBy = null, bool IsComplete = false);
-
-[JsonSerializable(typeof(Todo[]))]
-[JsonSerializable(typeof(Todo))]
-internal partial class AppJsonSerializerContext : JsonSerializerContext
-{
 }
