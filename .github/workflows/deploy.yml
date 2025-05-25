@@ -4,9 +4,15 @@ on:
   push:
     branches: [ $default-branch ]
   workflow_dispatch:
+    inputs:
+      azure_webapp_name:
+        description: 'Name of the Azure Web App to deploy to'
+        required: false
+        default: 'nostria-eu-discovery'
+        type: string
 
 env:
-  AZURE_WEBAPP_NAME: nostria-discovery
+  AZURE_WEBAPP_NAME: ${{ github.event.inputs.azure_webapp_name || 'nostria-eu-discovery' }}
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
   IMAGE_TAG: ${{ github.sha }}
