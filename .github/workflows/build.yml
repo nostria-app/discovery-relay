@@ -41,10 +41,10 @@ jobs:
             ${{ runner.os }}-buildx-
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile
+          file: ./DiscoveryRelay/Dockerfile
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}, ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           cache-from: type=local,src=/tmp/.buildx-cache
